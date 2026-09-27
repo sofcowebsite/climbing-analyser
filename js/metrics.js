@@ -32,9 +32,10 @@ export const CFG = {
   minPointVis: 0.35,
   maxGapSec: 0.7,
   smoothSec: 0.3,
-  handMoveOn: 0.8, footMoveOn: 0.5, limbStill: 0.35, stillHoldSec: 0.3,
+  stillRadius: 0.08, stillWindowSec: 0.4, stillHoldSec: 0.3,
   // Hand moves are usually bigger than foot moves; a 15 cm foot step is a real move.
   handMoveDist: 0.4, footMoveDist: 0.25, handAdjustDist: 0.12, footAdjustDist: 0.08,
+  fineDetailPx: 60, // torso size (px) needed to see small hand/foot readjustments
   minElbow: 40, // anything tighter is almost always a tracking glitch
   pauseSpeed: 0.15, pauseMinSec: 1.2, restMinSec: 4,
   staticSpeed: 0.25,
@@ -133,12 +134,51 @@ function runs(n, pred) {
 
 // ---------- preprocessing ----------
 
+// Left/right pairs by body part. Pose models often mix up left and right, especially from
+// behind or far away, which would look like a hand or foot teleporting across the body.
+const LR_GROUPS = {
+  arms: [[11, 12], [13, 14], [15, 16]], // finger points are too noisy on small figures
+  legs: [[23, 24], [25, 26], [27, 28], [29, 30], [31, 32]],
+};
+
+// Keeps left/right labels consistent over time: for each frame and body part, swap the
+// sides if that matches the previous frame better. Returns new frames (input untouched).
+export function fixLeftRight(frames) {
+  const out = [];
+  let prev = null;
+  for (const f of frames) {
+    if (!f.p) { out.push(f); continue; }
+    const p = f.p.map((q) => q.slice());
+    if (prev) {
+      for (const pairs of Object.values(LR_GROUPS)) {
+        let keep = 0, swap = 0, n = 0;
+        for (const [l, r] of pairs) {
+          if (Math.min(p[l][2], p[r][2], prev[l][2], prev[r][2]) < 0.2) continue;
+          keep += dist(p[l], prev[l]) + dist(p[r], prev[r]);
+          swap += dist(p[l], prev[r]) + dist(p[r], prev[l]);
+          n++;
+        }
+        if (n && swap < keep * 0.8) for (const [l, r] of pairs) [p[l], p[r]] = [p[r], p[l]];
+      }
+    }
+    prev = p;
+    out.push({ ...f, p });
+  }
+  return out;
+}
+
 // Builds smoothed per-landmark tracks: tracks[idx] = { x: [], y: [] } (NaN where unknown).
-function buildTracks(frames, dt) {
+// Coordinates are converted to "wall" coordinates by removing camera movement (frame.cam),
+// so a camera that pans to follow the climber doesn't hide their progress.
+function buildTracks(frames, dt, smoothSec) {
   const n = frames.length;
   const coreOk = frames.map((f) => !!f.p && mean(CORE.map((i) => f.p[i][2])) >= CFG.minCoreVis);
   const maxGap = Math.max(1, Math.round(CFG.maxGapSec / dt));
-  const win = Math.max(1, Math.round(CFG.smoothSec / dt) | 1);
+  const win = Math.max(1, Math.round(smoothSec / dt) | 1);
+  // Camera pans are smooth; smoothing the estimate removes its small step-like jitter.
+  const camWin = Math.max(1, Math.round(0.8 / dt) | 1);
+  const camX = smooth(frames.map((f) => (f.cam ? f.cam[0] : 0)), camWin);
+  const camY = smooth(frames.map((f) => (f.cam ? f.cam[1] : 0)), camWin);
   const tracks = {};
   const needed = new Set([...KEPT_LANDMARKS]);
   for (const idx of needed) {
@@ -146,8 +186,8 @@ function buildTracks(frames, dt) {
     for (let i = 0; i < n; i++) {
       const p = frames[i].p;
       const ok = coreOk[i] && p[idx][2] >= (CORE.includes(idx) ? 0 : CFG.minPointVis);
-      xs[i] = ok ? p[idx][0] : NaN;
-      ys[i] = ok ? p[idx][1] : NaN;
+      xs[i] = ok ? p[idx][0] - camX[i] : NaN;
+      ys[i] = ok ? p[idx][1] - camY[i] : NaN;
     }
     tracks[idx] = { x: smooth(fillGaps(xs, maxGap), win), y: smooth(fillGaps(ys, maxGap), win) };
   }
@@ -166,31 +206,60 @@ function limbPoint(tracks, key, i) {
 // ---------- limb movement segmentation ----------
 
 // Splits one limb's trajectory into moves (new hold) and adjustments (small re-placements).
-// A limb is "still" when its speed stays under limbStill; each run of motion between two
-// still periods is classified by how far the limb ended up from where it started.
+// A limb is "still" (on a hold) when it stays inside a small radius for a short window.
+// The radius adapts to the measured landmark jitter, which is much larger for far-away
+// climbers. Each gap between two holds is classified by the distance between them.
 function segmentLimb(xs, ys, times, dt, T, isHand) {
   const n = xs.length;
   const vx = derivative(xs, dt), vy = derivative(ys, dt);
   const speed = vx.map((v, i) => (isNum(v) && isNum(vy[i]) ? Math.hypot(v, vy[i]) / T : NaN));
-  const minPeak = isHand ? CFG.handMoveOn : CFG.footMoveOn;
   const moveDist = isHand ? CFG.handMoveDist : CFG.footMoveDist;
   const adjustDist = isHand ? CFG.handAdjustDist : CFG.footAdjustDist;
   const stillN = Math.max(1, Math.round(CFG.stillHoldSec / dt));
-  const still = speed.map((s) => isNum(s) && s < CFG.limbStill);
+
+  // Jitter: how far each point sits from the midpoint of its neighbours.
+  const resid = [];
+  for (let i = 1; i < n - 1; i++) {
+    const rx = xs[i] - (xs[i - 1] + xs[i + 1]) / 2, ry = ys[i] - (ys[i - 1] + ys[i + 1]) / 2;
+    if (isNum(rx) && isNum(ry)) resid.push(Math.hypot(rx, ry) / T);
+  }
+  const noise = isNum(median(resid)) ? median(resid) : 0;
+  const stillR = Math.max(CFG.stillRadius, noise * 4);
+
+  const h = Math.max(1, Math.round(CFG.stillWindowSec / 2 / dt));
+  const still = new Array(n).fill(false);
+  for (let i = 0; i < n; i++) {
+    if (!isNum(xs[i])) continue;
+    let sx = 0, sy = 0, c = 0;
+    for (let k = Math.max(0, i - h); k <= Math.min(n - 1, i + h); k++) if (isNum(xs[k])) { sx += xs[k]; sy += ys[k]; c++; }
+    if (c < h + 1) continue;
+    const mx = sx / c, my = sy / c;
+    let spread = 0;
+    for (let k = Math.max(0, i - h); k <= Math.min(n - 1, i + h); k++) {
+      if (isNum(xs[k])) spread = Math.max(spread, Math.hypot(xs[k] - mx, ys[k] - my) / T);
+    }
+    still[i] = spread < stillR;
+  }
   // Only still runs long enough to count as "on a hold".
   const holds = runs(n, (i) => still[i]).filter((r) => r.e - r.s + 1 >= stillN);
+  const holdPos = (r, fromEnd) => {
+    const idx = [];
+    for (let i = fromEnd ? r.e : r.s, c = 0; c < 5 && i >= r.s && i <= r.e; i += fromEnd ? -1 : 1, c++) idx.push(i);
+    return [median(idx.map((i) => xs[i])), median(idx.map((i) => ys[i]))];
+  };
   const moves = [], adjustments = [];
   for (let k = 1; k < holds.length; k++) {
-    const a = holds[k - 1].e, b = holds[k].s;
+    const a = holds[k - 1], b = holds[k];
     let peak = 0, gap = false;
-    for (let i = a; i <= b; i++) { if (isNum(speed[i])) peak = Math.max(peak, speed[i]); else gap = true; }
+    for (let i = a.e; i <= b.s; i++) { if (isNum(speed[i])) peak = Math.max(peak, speed[i]); else gap = true; }
     if (gap) continue;
-    const d = Math.hypot(xs[b] - xs[a], ys[b] - ys[a]) / T;
-    const ev = { t0: times[a], t1: times[b], dist: d, peak, up: (ys[a] - ys[b]) / T };
-    if (d >= moveDist && peak >= minPeak) moves.push(ev);
-    else if (d >= adjustDist) adjustments.push(ev);
+    const pa = holdPos(a, true), pb = holdPos(b, false);
+    const d = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]) / T;
+    const ev = { t0: times[a.e], t1: times[b.s], dist: d, peak, up: (pa[1] - pb[1]) / T };
+    if (d >= moveDist) moves.push(ev);
+    else if (d >= Math.max(adjustDist, stillR * 1.5)) adjustments.push(ev);
   }
-  return { moves, adjustments, still, speed };
+  return { moves, adjustments, still, speed, noise };
 }
 
 // Adjustments that happen shortly after a move are "readjustments" (not settling on the first try).
@@ -204,8 +273,9 @@ function countReadjust(moves, adjustments, windowSec = 2.5) {
 
 // ---------- main entry ----------
 
-export function analyze(frames, opts = {}) {
+export function analyze(rawFrames, opts = {}) {
   const warnings = [];
+  const frames = fixLeftRight(rawFrames);
   const n = frames.length;
   if (n < 10) return { ok: false, reason: 'Video too short to analyse.' };
 
@@ -213,7 +283,12 @@ export function analyze(frames, opts = {}) {
   const dt = (times[n - 1] - times[0]) / (n - 1) || 0.1;
   const detected = frames.filter((f) => f.p).length / n;
 
-  const { tracks, coreOk } = buildTracks(frames, dt);
+  // Rough body size before smoothing. Small, far-away climbers get noisier landmarks, so smooth more.
+  const rawTorso = median(frames.map((f) => (f.p && mean(CORE.map((i) => f.p[i][2])) >= CFG.minCoreVis
+    ? dist(mid(f.p[LM.lShoulder], f.p[LM.rShoulder]), mid(f.p[LM.lHip], f.p[LM.rHip])) : NaN)));
+  const torsoPx = isNum(rawTorso) && opts.frameHeightPx ? rawTorso * opts.frameHeightPx : null;
+  const smoothSec = torsoPx === null ? CFG.smoothSec : torsoPx < 30 ? 0.6 : torsoPx < 60 ? 0.45 : CFG.smoothSec;
+  const { tracks, coreOk } = buildTracks(frames, dt, smoothSec);
 
   // Body scale: median torso length (shoulder mid to hip mid).
   const torso = [], shoulderW = [];
@@ -227,9 +302,23 @@ export function analyze(frames, opts = {}) {
   const T = median(torso);
   const trackedRatio = coreOk.filter(Boolean).length / n;
   if (!isNum(T) || torso.length < 8) {
-    return { ok: false, reason: 'Could not find a climber in enough of the video. Make sure your whole body is visible and well lit.', detected };
+    return { ok: false, reason: 'Could not find the climber in enough of the video. Try tapping on the climber before analysing, trimming to just the climb, or filming in 4K / closer.', detected };
   }
-  if (T < 0.035) warnings.push('You look very small in the frame, so measurements are less precise. Film closer or zoom in slightly.');
+  if (torsoPx !== null ? torsoPx < 22 : T < 0.03) {
+    warnings.push('You are very small in the video, so hand and foot measurements are rough. Zoom in (2× or 3× lens) or film in 4K next time.');
+  }
+  // Camera movement (compensated, but worth knowing about).
+  const camPath = frames.reduce((acc, f, i) => {
+    if (i === 0 || !f.cam || !frames[i - 1].cam) return acc;
+    return acc + Math.hypot(f.cam[0] - frames[i - 1].cam[0], f.cam[1] - frames[i - 1].cam[1]);
+  }, 0);
+  const cameraMoved = camPath > 0.05;
+  // Zoom changes the apparent body size; the measurements assume a constant scale.
+  const torsoEarly = median(frames.slice(0, n >> 2).map((f) => (f.p ? dist(mid(f.p[11], f.p[12]), mid(f.p[23], f.p[24])) : NaN)));
+  const torsoLate = median(frames.slice(-(n >> 2)).map((f) => (f.p ? dist(mid(f.p[11], f.p[12]), mid(f.p[23], f.p[24])) : NaN)));
+  if (isNum(torsoEarly) && isNum(torsoLate) && Math.max(torsoEarly, torsoLate) / Math.min(torsoEarly, torsoLate) > 1.5) {
+    warnings.push('The zoom seems to change during the video, which distorts speed and height measurements. Try not to zoom while filming.');
+  }
   if (trackedRatio < 0.6) warnings.push(`Your body was only tracked in ${Math.round(trackedRatio * 100)}% of the video. Results may be incomplete.`);
 
   // Per-frame body signals.
@@ -400,6 +489,9 @@ export function analyze(frames, opts = {}) {
   const gain = isNum(hEnd) && isNum(hStart) ? hEnd - hStart : 0;
   const movingTime = Math.max(0, climbTime - pausedTime);
   const handMoveCount = handMoves.length, footMoveCount = footMoves.length;
+  // Readjustments are only a few centimetres: below ~60 px of torso they're lost in tracking jitter.
+  const tooSmallForFine = torsoPx !== null && torsoPx < CFG.fineDetailPx;
+  if (tooSmallForFine) warnings.push('You are too small in the video to measure fine details like grip and foot readjustments, so those were skipped. The other measurements still work.');
 
   const metrics = {
     climbTime,
@@ -409,8 +501,8 @@ export function analyze(frames, opts = {}) {
     footMoves: footMoveCount,
     movesPerMin: climbTime > 0 ? (handMoveCount / climbTime) * 60 : null,
     footHandRatio: handMoveCount >= 3 && feetVisible >= 0.4 && !feetLost ? footMoveCount / handMoveCount : null,
-    footReadjustRate: footMoveCount >= 3 && feetVisible >= 0.4 ? footAdjust / footMoveCount : null,
-    handReadjustRate: handMoveCount >= 3 && handsVisible >= 0.4 ? handAdjust / handMoveCount : null,
+    footReadjustRate: footMoveCount >= 3 && feetVisible >= 0.4 && !tooSmallForFine ? footAdjust / footMoveCount : null,
+    handReadjustRate: handMoveCount >= 3 && handsVisible >= 0.4 && !tooSmallForFine ? handAdjust / handMoveCount : null,
     straightArmRatio,
     legDrive,
     balanceOffset,
@@ -426,6 +518,8 @@ export function analyze(frames, opts = {}) {
     falls: falls.length,
     trackedRatio,
     detected,
+    cameraMoved,
+    torsoPx,
   };
 
   // ----- key moments -----

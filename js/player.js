@@ -34,6 +34,9 @@ export function createPlayer(container) {
 
   let track = null; // { t: [], pts: [[x,y,v]x33 | null] }
   let live = null;  // landmarks being drawn during analysis
+  let liveBox = null; // tracked region during analysis (normalised)
+  let marker = null;  // where the user tapped the climber (normalised)
+  let picking = null; // callback while waiting for a tap
   let url = null;
   let raf = 0;
   const speeds = [1, 0.5, 0.25];
@@ -80,6 +83,44 @@ export function createPlayer(container) {
     if (!skel.checked) return;
     const pts = live || frameAt(video.currentTime);
     if (pts) drawSkeleton(ctx, pts, size.w, size.h, { color: '#3987e5', joint: '#ffffff' });
+    const lw = Math.max(2, size.w / 250);
+    if (liveBox) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = lw;
+      ctx.setLineDash([lw * 4, lw * 3]);
+      ctx.strokeRect(liveBox.x0 * size.w, liveBox.y0 * size.h, (liveBox.x1 - liveBox.x0) * size.w, (liveBox.y1 - liveBox.y0) * size.h);
+      ctx.setLineDash([]);
+    }
+    if (marker && !live) {
+      const x = marker.x * size.w, y = marker.y * size.h, r = Math.max(14, size.w / 18);
+      ctx.lineWidth = lw * 1.5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.fillStyle = 'rgba(57,135,229,0.35)';
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x - r * 1.6, y); ctx.lineTo(x - r * 0.5, y); ctx.moveTo(x + r * 0.5, y); ctx.lineTo(x + r * 1.6, y);
+      ctx.moveTo(x, y - r * 1.6); ctx.lineTo(x, y - r * 0.5); ctx.moveTo(x, y + r * 0.5); ctx.lineTo(x, y + r * 1.6); ctx.stroke();
+    }
+  }
+
+  // Tap-to-select: while picking, the overlay catches one tap on the picture.
+  canvas.addEventListener('pointerdown', (ev) => {
+    if (!picking) return;
+    ev.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    marker = { x: (ev.clientX - r.left) / r.width, y: (ev.clientY - r.top) / r.height };
+    const cb = picking;
+    stopPicking();
+    draw();
+    cb({ ...marker, t: video.currentTime });
+  });
+  const hintEl = document.createElement('div');
+  hintEl.className = 'pick-hint';
+  hintEl.textContent = 'Tap on the climber';
+  function stopPicking() {
+    picking = null;
+    hintEl.remove();
+    canvas.style.pointerEvents = 'none';
+    wrap.classList.remove('picking');
   }
 
   function loop() {
@@ -109,7 +150,17 @@ export function createPlayer(container) {
       if (!isFinite(video.duration) || video.duration <= 0) throw new Error('Could not read the video length.');
     },
     setTrack(tr) { track = tr; draw(); },
-    setLive(pts) { live = pts; draw(); },
+    setLive(pts, box = null) { live = pts; liveBox = box; draw(); },
+    pickPoint(cb) {
+      video.pause();
+      picking = cb;
+      canvas.style.pointerEvents = 'auto';
+      wrap.classList.add('picking');
+      wrap.appendChild(hintEl);
+      draw();
+    },
+    cancelPick() { stopPicking(); },
+    setMarker(m) { marker = m; draw(); },
     showControls(on) { video.controls = on; controls.hidden = !on; },
     seek(t) { video.pause(); video.currentTime = Math.max(0, t); wrap.scrollIntoView({ behavior: 'smooth', block: 'center' }); },
     destroy() {
@@ -128,6 +179,7 @@ export function packTrack(frames, aspect) {
   return {
     aspect,
     t: frames.map((f) => Math.round(f.t * 1000) / 1000),
+    c: frames.map((f) => (f.cam ? [Math.round(f.cam[0] * 1e4) / 1e4, Math.round(f.cam[1] * 1e4) / 1e4] : [0, 0])),
     p: frames.map((f) => (f.p ? KEPT_LANDMARKS.flatMap((i) => [
       Math.round((f.p[i][0] / aspect) * 1000) / 1000,
       Math.round(f.p[i][1] * 1000) / 1000,

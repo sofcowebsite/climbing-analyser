@@ -8,20 +8,27 @@ A free web app for iPhone (and any modern browser). Upload a climbing video and 
 
 ## Put it on your iPhone (free hosting with GitHub Pages)
 
-1. Merge this branch into `main`.
-2. On GitHub, go to **Settings → Pages**. Under *Build and deployment*, choose **Deploy from a branch**, then branch **`main`** and folder **`/ (root)`**, and click **Save**.
-3. After a minute or two the app is live at `https://sofcowebsite.github.io/climbing-analyser/`.
-4. Open that link in **Safari** on your iPhone, tap **Share → Add to Home Screen**. It now opens full-screen like an app and works offline.
+1. On GitHub, go to **Settings → Pages**. Under *Build and deployment*, choose **Deploy from a branch**, pick the branch with the app (e.g. `main`, or `claude/trusting-keller-3ojvfg`) and folder **`/ (root)`**, then click **Save**.
+2. After a minute or two the app is live at `https://sofcowebsite.github.io/climbing-analyser/`.
+3. Open that link in **Safari** on your iPhone, tap **Share → Add to Home Screen**. It now opens full-screen like an app and works offline.
 
 Any free static host also works: Netlify, Cloudflare Pages, or Vercel. Just point it at the repo root. There is no build step.
 
 ## Using it
 
-1. **Film:** phone on a tripod (or propped up), whole body in frame, good light, one climber.
-2. **Analyse tab:** choose the video, optionally trim it to the climb, add the name, grade and result, then tap **Analyse climb**. Expect roughly 20–60 s per minute of video on a recent iPhone.
+1. **Film:** filming from far away (e.g. outdoors from the base of the crag) is fine. Record in 4K, use the 2×/3× lens if the route still fits, keep the camera as still as you can, and don't zoom while recording.
+2. **Analyse tab:** choose the video, **tap on the climber** (important when the belayer or other people are in shot), optionally trim it to the climb, add the name, grade and result, then tap **Analyse climb**. Expect roughly 30–90 s per minute of video on a recent iPhone.
 3. **Report:** you get an overall score, four technique areas, what you did well, what to work on (with drills), a height-over-time chart, and key moments you can tap to jump the video there. You can replay the video with a skeleton overlay.
 4. **History / Progress:** every climb is saved on the device. Progress shows score trends, send rate, hardest send, and your recurring weak spots.
 5. **Guide:** set your height (for metre estimates), switch analysis quality, and export or import backups.
+
+## Outdoor and far-away videos
+
+- **Zoomed tracking:** the pose model only looks at about 256 px, so a far-away climber would be a few pixels tall. The app follows the climber with a crop taken from the full-resolution video, so the model sees them large. If it loses them, it scans the whole frame in tiles to find them again.
+- **Picking the right person:** the tap tells it who the climber is. Without a tap it picks the highest person in the frame, which is usually the climber rather than the belayer.
+- **Camera movement:** pans are measured by matching the rock texture around the climber against a reference frame, then removed from the measurements. Zooming during the video is not compensated.
+- **Left/right mix-ups:** pose models often swap left and right on small figures or climbers seen from behind. These swaps are detected and undone over time.
+- **Small-figure safeguards:** more smoothing, jitter-aware hold detection, and fine-detail scores (grip and foot readjustments) are skipped when the climber's torso is under about 60 px.
 
 ## What it measures
 
@@ -38,7 +45,7 @@ It also detects rests, dynamic moves and falls. Thresholds and scoring rules liv
 
 - It works from a 2D picture, so it can't see the distance from your hips to the wall, the wall angle, or the holds.
 - The pose model isn't climbing-specific. Occlusion, bad light or being far from the camera reduce accuracy, and the report warns you when tracking was poor.
-- A moving camera distorts the movement measurements.
+- Camera pans are compensated for, but zooming during a video isn't. Against plain sky there's no texture to track.
 - iOS may clear website data for sites you haven't used in a while. Add the app to your Home Screen and use **Export backup** occasionally.
 
 ## Development
@@ -54,9 +61,10 @@ The project layout:
 index.html, css/, js/        app (plain ES modules, no build step)
 js/metrics.js                pose frames → metrics (pure, tested)
 js/coach.js                  metrics → scores + feedback (pure, tested)
-js/pose.js                   MediaPipe Pose in the browser
+js/pose.js                   MediaPipe Pose in the browser + zoomed climber tracking
+js/camera.js                 camera-movement estimation (pure, tested)
 vendor/mediapipe/            MediaPipe Tasks Vision 1.0.1 JS + WASM (Apache 2.0)
 models/                      pose_landmarker_full / lite models (Apache 2.0)
 sw.js, manifest.webmanifest  offline support + installable app
-tests/                       node:test suite with a synthetic climber
+tests/                       node:test suite with a synthetic climber; outdoor-scene.html test fixture
 ```

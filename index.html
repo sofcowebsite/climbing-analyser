@@ -34,11 +34,12 @@
         <details class="card tips" open>
           <summary>How to film for the best results</summary>
           <ul>
-            <li><strong>Keep the phone still.</strong> Use a tripod or prop it against something. A moving camera spoils the movement measurements.</li>
-            <li><strong>Get your whole body in frame</strong> for the whole climb, feet included. Film from 3–6 m back.</li>
-            <li><strong>Film from behind or slightly to the side,</strong> facing the wall.</li>
-            <li><strong>Good light</strong> and clothing that stands out from the wall both help tracking.</li>
-            <li><strong>One climber in shot.</strong> Keep clips under about 3 minutes.</li>
+            <li><strong>Filming from far away is fine.</strong> The app zooms in on the climber by itself. Record in <strong>4K</strong> (Settings → Camera → Record Video) so there's more detail to zoom into.</li>
+            <li><strong>Use the 2× or 3× lens</strong> if the whole route still fits in frame. The bigger the climber appears, the better.</li>
+            <li><strong>Keep the camera as still as you can.</strong> A tripod or a rock works best. Slow pans to follow the climber are compensated for, but avoid zooming while filming.</li>
+            <li><strong>Keep the climber's whole body in view,</strong> feet included.</li>
+            <li><strong>Mind the light.</strong> Avoid filming into the sun or against bright sky. Clothing that contrasts with the rock helps a lot.</li>
+            <li><strong>Tap the climber</strong> before analysing, so the belayer or other climbers aren't tracked by mistake.</li>
           </ul>
         </details>
       </div>
@@ -46,6 +47,11 @@
       <div id="video-area" hidden></div>
 
       <div id="setup-step" hidden>
+        <div class="card">
+          <h3>Select the climber</h3>
+          <p class="muted small" id="pick-status">Scrub to the start of the climb, then tap the climber. This matters when they're far away or other people (like the belayer) are in shot.</p>
+          <button class="btn btn-block" id="pick-btn" type="button">Tap to select climber</button>
+        </div>
         <div class="card">
           <h3>Trim to the climb <span class="muted small">(optional)</span></h3>
           <p class="muted small">Play or scrub the video, then set where the climb starts and ends.</p>
@@ -174,7 +180,7 @@
 
       <details class="card">
         <summary>How the analysis works</summary>
-        <p>Crux Coach runs Google's MediaPipe Pose model in your browser. It finds 33 body points (shoulders, elbows, wrists, hips, knees, ankles, toes) in about 10 frames per second of your video. From those points it measures:</p>
+        <p>Crux Coach runs Google's MediaPipe Pose model in your browser. It finds 33 body points (shoulders, elbows, wrists, hips, knees, ankles, toes) in about 10 frames per second of your video. It follows the climber with a zoomed-in crop, so far-away climbers are still big enough to track. It also measures camera movement from the rock around them. From those points it measures:</p>
         <ul>
           <li><strong>Footwork:</strong> how often your feet move compared with your hands, and whether they stay put once placed.</li>
           <li><strong>Arm efficiency:</strong> elbow angle when you're holding still, and whether upward movement comes from straightening your knees or bending your elbows.</li>
@@ -189,7 +195,8 @@
         <ul>
           <li>It sees a flat 2D picture. It can't measure how close your hips are to the wall, the wall angle, or where the holds are.</li>
           <li>The pose model wasn't trained specifically on climbers. Unusual positions, occlusion or poor light can confuse it.</li>
-          <li>A moving or zooming camera will distort the movement measurements.</li>
+          <li>Camera pans are compensated for by tracking the rock in the background, but zooming during a video isn't. Against plain sky there's nothing to track, so keep the camera still there.</li>
+          <li>Very far away (the climber is only a few dozen pixels tall) gives rough hand and foot measurements. Record in 4K or zoom in.</li>
           <li>The scores are guidance, not a verdict. Use them to spot trends over many sessions.</li>
         </ul>
       </details>

@@ -40,7 +40,9 @@ function toast(msg, ms = 3500) {
 let player = null;
 let currentFile = null;
 let trim = { start: 0, end: null };
+let pick = null; // where the user tapped the climber: { x, y, t } (0..1 coords)
 let abort = null;
+const PICK_HELP = 'Scrub to the start of the climb, then tap the climber. This matters when they\'re far away or other people (like the belayer) are in shot.';
 
 function step(name) {
   for (const s of ['pick', 'setup', 'progress', 'result']) $(`${s}-step`).hidden = s !== name;
@@ -93,6 +95,9 @@ async function openVideo(file) {
   }
   trim = { start: 0, end: null };
   updateTrimLabels();
+  pick = null;
+  $('pick-status').textContent = PICK_HELP;
+  $('pick-btn').textContent = 'Tap to select climber';
   const form = $('details-form');
   form.reset();
   $('grade-scale').value = settings.gradeScale || 'v';
@@ -113,6 +118,15 @@ $('set-end').addEventListener('click', () => {
   updateTrimLabels();
 });
 $('reset-trim').addEventListener('click', () => { trim = { start: 0, end: null }; updateTrimLabels(); });
+$('pick-btn').addEventListener('click', () => {
+  $('pick-btn').textContent = 'Now tap the climber in the video ↑';
+  player.video.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  player.pickPoint((m) => {
+    pick = m;
+    $('pick-status').textContent = `Climber selected at ${fmtTime(m.t, true)}. The app will follow this person.`;
+    $('pick-btn').textContent = 'Select again';
+  });
+});
 $('change-video').addEventListener('click', () => $('file-input').click());
 $('cancel-btn').addEventListener('click', () => abort?.abort());
 
@@ -151,6 +165,7 @@ async function runAnalysis() {
   // Prime decoding inside the tap (iOS won't seek an untouched video reliably).
   try { await video.play(); video.pause(); } catch { /* fine */ }
 
+  player.cancelPick();
   step('progress');
   abort = new AbortController();
   let wakeLock = null;
@@ -167,8 +182,9 @@ async function runAnalysis() {
       start: trim.start,
       end: trim.end,
       signal: abort.signal,
-      onFrame: (frac, pts) => {
-        player.setLive(pts ? pts.map((q) => [q.x, q.y, q.visibility ?? 1]) : null);
+      hint: pick,
+      onFrame: (frac, pts, box) => {
+        player.setLive(pts, box);
         const el = (performance.now() - started) / 1000;
         const eta = frac > 0.03 ? Math.max(0, el / frac - el) : null;
         setProgress('Analysing your climb…', frac, `${Math.round(frac * 100)}%${eta !== null ? ` · about ${Math.ceil(eta)} s left` : ''}. Keep this screen open.`);
@@ -184,7 +200,8 @@ async function runAnalysis() {
     player.setLive(null);
 
     setProgress('Working out your technique…', 1, '');
-    const analysis = analyze(out.frames);
+    window.__crux.lastRun = out; // for debugging and automated tests
+    const analysis = analyze(out.frames, { frameHeightPx: out.height });
     if (!analysis.ok) throw new Error(analysis.reason);
     const report = coach(analysis);
     const track = packTrack(out.frames, out.aspect);
@@ -221,6 +238,7 @@ async function runAnalysis() {
 
 function showResult(session) {
   step('result');
+  player.setMarker(null);
   player.setTrack(unpackTrack(session.track));
   const box = $('result-step');
   renderReport(box, session, { heightCm: settings.heightCm, onSeek: (t) => player.seek(t) });

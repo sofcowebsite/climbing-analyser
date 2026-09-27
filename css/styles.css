@@ -150,6 +150,10 @@ details.card[open] > summary { margin-bottom: 10px; }
 }
 .video-wrap video { display: block; width: 100%; max-height: 62vh; object-fit: contain; background: #000; }
 .video-wrap canvas { position: absolute; pointer-events: none; }
+.video-wrap.picking { outline: 3px solid var(--accent); outline-offset: -3px; }
+.video-wrap.picking canvas { cursor: crosshair; }
+.pick-hint { position: absolute; left: 8px; right: 8px; top: 8px; z-index: 2; pointer-events: none;
+  background: rgba(0, 0, 0, 0.7); color: #fff; font-size: 14px; border-radius: 10px; padding: 8px 10px; text-align: center; }
 .video-controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
 
 .trim-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }

@@ -1,7 +1,7 @@
 // Run with: node --test tests/
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analyze, angle, fillGaps, smooth } from '../js/metrics.js';
+import { analyze, angle, fillGaps, smooth, fixLeftRight } from '../js/metrics.js';
 import { coach, METRIC_DEFS } from '../js/coach.js';
 import { hardestSends } from '../js/grades.js';
 import { makeClimb } from './synthetic.mjs';
@@ -87,4 +87,33 @@ test('hardest send per grade scale', () => {
   ]);
   assert.equal(h.v.grade, 'V5');
   assert.equal(h.french.grade, '6b+');
+});
+
+test('left/right mix-ups from the pose model are undone', () => {
+  const clean = makeClimb({ cycles: 8 });
+  // Swap every left/right pair in a scattered set of frames, as a confused model would.
+  const swapped = clean.map((f, i) => {
+    if (i % 3 !== 1 && i % 7 !== 2) return f;
+    const p = f.p.map((q) => q.slice());
+    for (let l = 11; l <= 31; l += 2) [p[l], p[l + 1]] = [p[l + 1], p[l]];
+    return { ...f, p };
+  });
+  const fixed = fixLeftRight(swapped);
+  const same = fixed.every((f, i) => f.p[15][0] === clean[i].p[15][0] && f.p[27][0] === clean[i].p[27][0]);
+  assert.ok(same);
+  const r = analyze(swapped);
+  assert.equal(r.metrics.handMoves, 8);
+});
+
+test('camera pans are removed from the measurements', () => {
+  // Same climb, but the camera follows the climber upwards: in the image they stay put.
+  const frames = makeClimb({ cycles: 8 });
+  const panned = frames.map((f, i) => {
+    const hip = (frames[i].p[23][1] + frames[i].p[24][1]) / 2 - (frames[0].p[23][1] + frames[0].p[24][1]) / 2;
+    return { ...f, p: f.p.map(([x, y, v]) => [x, y - hip, v]), cam: [0, -hip] };
+  });
+  const a = analyze(frames), b = analyze(panned);
+  assert.equal(b.metrics.handMoves, a.metrics.handMoves);
+  assert.ok(Math.abs(b.metrics.heightGain - a.metrics.heightGain) < 0.2);
+  assert.equal(b.metrics.cameraMoved, true);
 });

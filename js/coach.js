@@ -163,6 +163,7 @@ export function coach(result) {
       ? turn.good(m.turnedShare, m)
       : `${turn.bad(m.turnedShare, m)} ${turn.drill}`);
   }
+  if (m.cameraMoved) notes.push('The camera moved during the video. The app compensated by tracking the rock in the background, but a fixed camera gives the most accurate results.');
   if (m.dynos > 0) notes.push(`${m.dynos} dynamic move${m.dynos > 1 ? 's were' : ' was'} detected (fast upward body motion).`);
   if (m.falls > 0) notes.push(`A fall or big drop was detected. The analysis covers the climbing up to your high point.`);
 

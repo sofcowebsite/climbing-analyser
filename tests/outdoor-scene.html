@@ -1,0 +1,69 @@
+<!-- Test fixture: a synthetic outdoor scene (small climber far away on textured rock, a belayer at the base, camera panning up). Open it via "npm start" and record the page (e.g. Playwright recordVideo) to get a test video for the full pipeline. Add ?pan=0 for a still camera. -->
+<html><body style="margin:0;background:#777">
+<canvas id="c" width="720" height="1280"></canvas>
+<script type="module">
+import { makeClimb } from '/tests/synthetic.mjs';
+const PAN = new URLSearchParams(location.search).get('pan') !== '0';
+const frames = makeClimb({ cycles: 5, fps: 30, noise: 0 });
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+const W = 720, H = 1280;
+// Pre-render a tall rock texture (world), 2400px tall.
+const rock = document.createElement('canvas'); rock.width = W; rock.height = 4000;
+const r = rock.getContext('2d');
+let s = 11; const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+r.fillStyle = '#8a8378'; r.fillRect(0, 0, W, 4000);
+for (let k = 0; k < 2600; k++) {
+  const g = 90 + Math.floor(rnd() * 90);
+  r.fillStyle = `rgb(${g + 10},${g},${g - 12})`;
+  r.beginPath(); r.ellipse(rnd() * W, rnd() * 4000, 4 + rnd() * 26, 3 + rnd() * 14, rnd() * 3, 0, 7); r.fill();
+}
+for (let k = 0; k < 60; k++) { r.strokeStyle = 'rgba(40,35,30,0.6)'; r.lineWidth = 2 + rnd() * 3; r.beginPath(); const x = rnd() * W, y = rnd() * 4000; r.moveTo(x, y); r.lineTo(x + (rnd() - 0.5) * 200, y + rnd() * 300); r.stroke(); }
+// Climber: synthetic coords (y in 0..1 with T=0.12) scaled to a small figure.
+const SCALE = 0.32, CX = 0.55 * W, WORLD_Y0 = 2500;
+const toWorld = (p) => [CX + (p[0] - 0.28125) * H * SCALE, WORLD_Y0 + (p[1] - 0.8) * H * SCALE];
+function limb(a, b, w, col, oy) { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(a[0], a[1] - oy); ctx.lineTo(b[0], b[1] - oy); ctx.stroke(); }
+function person(f, oy, sc, skin, shirt, pants) {
+  const P = f.map(toWorld);
+  limb(P[23], P[25], 9 * sc, pants, oy); limb(P[25], P[27], 8 * sc, pants, oy); limb(P[24], P[26], 9 * sc, pants, oy); limb(P[26], P[28], 8 * sc, pants, oy);
+  limb(P[27], P[31], 5 * sc, '#111', oy); limb(P[28], P[32], 5 * sc, '#111', oy);
+  ctx.fillStyle = shirt; ctx.beginPath(); ctx.moveTo(P[11][0] - 2, P[11][1] - oy); ctx.lineTo(P[12][0] + 2, P[12][1] - oy); ctx.lineTo(P[24][0] + 1, P[24][1] - oy); ctx.lineTo(P[23][0] - 1, P[23][1] - oy); ctx.fill();
+  limb(P[11], P[13], 6.5 * sc, shirt, oy); limb(P[13], P[15], 5.5 * sc, skin, oy); limb(P[12], P[14], 6.5 * sc, shirt, oy); limb(P[14], P[16], 5.5 * sc, skin, oy);
+  ctx.fillStyle = skin; ctx.beginPath(); ctx.ellipse(P[0][0], P[0][1] - oy, 6 * sc, 7.5 * sc, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#3b2314'; ctx.beginPath(); ctx.ellipse(P[0][0], P[0][1] - oy - 3 * sc, 6.3 * sc, 5 * sc, 0, Math.PI, 0); ctx.fill();
+}
+// Belayer: standing pose, drawn larger (closer to camera), at the base, left side.
+function belayerPose() {
+  const T = 0.12, cx = 0.2, hy = 0.9;
+  const p = new Array(33).fill(0).map(() => [cx, hy]);
+  const set = (i, x, y) => { p[i] = [x, y]; };
+  set(0, cx, hy - 1.45 * T); set(11, cx - 0.25 * T, hy - T); set(12, cx + 0.25 * T, hy - T);
+  set(13, cx - 0.35 * T, hy - 0.45 * T); set(14, cx + 0.45 * T, hy - 0.6 * T); set(15, cx - 0.3 * T, hy - 0.05 * T); set(16, cx + 0.3 * T, hy - 1.1 * T);
+  set(23, cx - 0.15 * T, hy); set(24, cx + 0.15 * T, hy); set(25, cx - 0.2 * T, hy + 0.85 * T); set(26, cx + 0.2 * T, hy + 0.85 * T);
+  set(27, cx - 0.22 * T, hy + 1.7 * T); set(28, cx + 0.22 * T, hy + 1.7 * T); set(31, cx - 0.35 * T, hy + 1.75 * T); set(32, cx + 0.35 * T, hy + 1.75 * T);
+  return p;
+}
+const bel = belayerPose();
+let i = 0;
+function draw() {
+  const f = frames[Math.min(i, frames.length - 1)].p;
+  const hip = toWorld([(f[23][0] + f[24][0]) / 2, (f[23][1] + f[24][1]) / 2]);
+  // Camera pans to keep the climber around 45% height, lagging a little.
+  const want = PAN ? Math.min(4000 - H, Math.max(0, hip[1] - 0.45 * H)) : 2500 - 0.45 * H;
+  window.camY = window.camY === undefined ? want : window.camY + (want - window.camY) * 0.05;
+  const oy = window.camY;
+  ctx.drawImage(rock, 0, -oy);
+  // Belayer stands at the base of the wall (world y ~ 2250), larger scale.
+  ctx.save(); ctx.translate(0, 0);
+  const belP = bel.map((q) => [q[0] * W * 1.0, 2900 + (q[1] - 0.9) * H * 0.55]);
+  const L = (a, b, w, col) => { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(belP[a][0], belP[a][1] - oy); ctx.lineTo(belP[b][0], belP[b][1] - oy); ctx.stroke(); };
+  L(23, 25, 16, '#2b3a2b'); L(25, 27, 14, '#2b3a2b'); L(24, 26, 16, '#2b3a2b'); L(26, 28, 14, '#2b3a2b');
+  ctx.fillStyle = '#b5452b'; ctx.beginPath(); ctx.moveTo(belP[11][0] - 4, belP[11][1] - oy); ctx.lineTo(belP[12][0] + 4, belP[12][1] - oy); ctx.lineTo(belP[24][0] + 2, belP[24][1] - oy); ctx.lineTo(belP[23][0] - 2, belP[23][1] - oy); ctx.fill();
+  L(11, 13, 12, '#b5452b'); L(13, 15, 10, '#e0ac69'); L(12, 14, 12, '#b5452b'); L(14, 16, 10, '#e0ac69');
+  ctx.fillStyle = '#e0ac69'; ctx.beginPath(); ctx.ellipse(belP[0][0], belP[0][1] - oy, 12, 15, 0, 0, 7); ctx.fill();
+  ctx.restore();
+  person(f, oy, 1, '#e0ac69', '#1f6fd1', '#222');
+  i++;
+  if (i < frames.length) setTimeout(draw, 1000 / 30); else window.done = true;
+}
+draw();
+</script></body></html>
