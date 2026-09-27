@@ -18,7 +18,7 @@ export const LM = {
 };
 
 // Bumped when the analysis changes; older saved sessions are re-analysed from their stored poses.
-export const ANALYSIS_VERSION = 5;
+export const ANALYSIS_VERSION = 6;
 
 // Landmarks kept when a session is stored (enough to redraw the skeleton).
 export const KEPT_LANDMARKS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -144,7 +144,7 @@ function runs(n, pred) {
 // tracks[idx] = { x: [], y: [], conf: [] } (NaN where unknown).
 function buildTracks(frames) {
   const r = refinePoses(frames);
-  return { tracks: r.world, coreOk: r.coreOk, refined: r.frames };
+  return { tracks: r.world, coreOk: r.coreOk, refined: r.frames, scale: r.scale };
 }
 
 const pt = (tracks, idx, i) => [tracks[idx].x[i], tracks[idx].y[i]];
@@ -241,7 +241,7 @@ export function analyze(frames, opts = {}) {
     ? dist(mid(f.p[LM.lShoulder], f.p[LM.rShoulder]), mid(f.p[LM.lHip], f.p[LM.rHip])) : NaN)));
   const torsoPx = isNum(rawTorso) && opts.frameHeightPx ? rawTorso * opts.frameHeightPx : null;
   if (n < 10 || !frames.some((f) => f.p)) return { ok: false, reason: 'Could not find the climber in enough of the video. Try tapping on the climber before analysing, trimming to just the climb, or filming in 4K / closer.', detected };
-  const { tracks, coreOk } = buildTracks(frames);
+  const { tracks, coreOk, scale } = buildTracks(frames);
   if (!tracks) return { ok: false, reason: 'Could not find the climber in enough of the video. Try tapping on the climber before analysing, trimming to just the climb, or filming in 4K / closer.', detected };
 
   // Body scale: median torso length (shoulder mid to hip mid).
@@ -267,12 +267,8 @@ export function analyze(frames, opts = {}) {
     return acc + Math.hypot(f.cam[0] - frames[i - 1].cam[0], f.cam[1] - frames[i - 1].cam[1]);
   }, 0);
   const cameraMoved = camPath > 0.05;
-  // Zoom changes the apparent body size; the measurements assume a constant scale.
-  const torsoEarly = median(frames.slice(0, n >> 2).map((f) => (f.p ? dist(mid(f.p[11], f.p[12]), mid(f.p[23], f.p[24])) : NaN)));
-  const torsoLate = median(frames.slice(-(n >> 2)).map((f) => (f.p ? dist(mid(f.p[11], f.p[12]), mid(f.p[23], f.p[24])) : NaN)));
-  if (isNum(torsoEarly) && isNum(torsoLate) && Math.max(torsoEarly, torsoLate) / Math.min(torsoEarly, torsoLate) > 1.5) {
-    warnings.push('The zoom seems to change during the video, which distorts speed and height measurements. Try not to zoom while filming.');
-  }
+  // Apparent size changes (moving away from the camera, zoom) are compensated in refine.js;
+  // see scaleChange below. No warning needed: the measurements are already rescaled.
   if (trackedRatio < 0.6) warnings.push(`Your body was only tracked in ${Math.round(trackedRatio * 100)}% of the video. Results may be incomplete.`);
 
   // Per-frame body signals.
@@ -478,6 +474,9 @@ export function analyze(frames, opts = {}) {
     detected,
     cameraMoved,
     torsoPx,
+    // How much bigger (>1) or smaller (<1) you looked at the end than at the start.
+    scaleChange: scale?.ratio && isNum(scale.ratio) ? Math.round(scale.ratio * 100) / 100 : 1,
+    scaleCompensated: !!scale?.applied,
   };
 
   // ----- detailed breakdown: every hand move, sections of the climb, left vs right -----

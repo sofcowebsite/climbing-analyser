@@ -346,6 +346,10 @@ export function coach(result) {
   const turn = items.find((i) => i.key === 'turnedShare');
   if (turn && isNum(turn.value)) notes.push(turn.value >= 0.08 ? turn.text : `${turn.text} ${turn.cue}`);
   if (m.dynos > 0) notes.push(`${plural(m.dynos, 'dynamic move')} detected (fast upward body motion).`);
+  if (m.scaleCompensated && Math.abs((m.scaleChange || 1) - 1) >= 0.2) {
+    const pc = Math.round(Math.abs(m.scaleChange - 1) * 100);
+    notes.push(`You looked about ${pc}% ${m.scaleChange < 1 ? 'smaller' : 'bigger'} on screen by the end of the climb, which is normal when you climb ${m.scaleChange < 1 ? 'away from' : 'toward'} the camera. All measurements were rescaled to your body size, so they're not affected.`);
+  }
 
   const actionPlan = buildActionPlan(improvements, sectionInsights, sideInsights, extraInsights, fallAnalyses);
   actionPlan.forEach((p, k) => { const it = items.find((i) => i.key === p.key); if (it) it.inPlan = k + 1; });

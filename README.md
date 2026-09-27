@@ -38,7 +38,8 @@ Any free static host also works: Netlify, Cloudflare Pages, or Vercel. Just poin
 
 - **Zoomed tracking:** the pose model only looks at about 256 px, so a far-away climber would be a few pixels tall. The app follows the climber with a crop taken from the full-resolution video, so the model sees them large. If it loses them, it scans the whole frame in tiles to find them again.
 - **Picking the right person:** the tap tells it who the climber is. Without a tap it picks the highest person in the frame, which is usually the climber rather than the belayer.
-- **Camera movement:** pans are measured by matching the rock texture around the climber against a reference frame, then removed from the measurements. Zooming during the video is not compensated.
+- **Camera movement:** pans are measured by matching the rock texture around the climber against a reference frame, then removed from the measurements.
+- **Changing size on screen:** you get smaller on screen as you climb away from the camera (or if the zoom changes). Your apparent size is tracked through the climb, ignoring brief leans and turns, and every measurement is rescaled to a constant body size.
 - **Left/right mix-ups:** pose models often swap left and right on small figures or climbers seen from behind. These swaps are detected and undone over time.
 - **Hidden legs:** legs are often partly hidden behind the body. Each frame is analysed twice (normal and mirrored) and the results are combined. Doubtful points are weighted down by a smoothing filter instead of being thrown away, hidden stretches are bridged using body proportions, and hold detection only trusts limbs while they're actually visible. In the replay, estimated parts of the skeleton are drawn faded and dashed.
 - **Small-figure safeguards:** more smoothing, jitter-aware hold detection, and fine-detail scores (grip and foot readjustments) are skipped when the climber's torso is under about 60 px.
@@ -62,7 +63,7 @@ It also detects rests, dynamic moves and falls. Thresholds and scoring rules liv
 
 - It works from a 2D picture, so it can't see the distance from your hips to the wall, the wall angle, or the holds.
 - The pose model isn't climbing-specific. Occlusion, bad light or being far from the camera reduce accuracy, and the report warns you when tracking was poor.
-- Camera pans are compensated for, but zooming during a video isn't. Against plain sky there's no texture to track.
+- Camera pans and gradual size changes (climbing away from the camera, slow zooms) are compensated for. Sudden zoom jumps mid-move and plain-sky backgrounds are still hard.
 - iOS may clear website data for sites you haven't used in a while. Add the app to your Home Screen and use **Export backup** occasionally.
 
 ## Development

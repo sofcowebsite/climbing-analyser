@@ -305,3 +305,47 @@ test('a long whole-body left/right swap starting mid-move is undone', () => {
   assert.ok(fixed.every((f, i) => f.p[15][0] === clean[i].p[15][0] && f.p[28][0] === clean[i].p[28][0]));
   assert.equal(analyze(flipped).metrics.handMoves, 8);
 });
+
+// ---------- apparent size changes (climbing away from the camera) ----------
+
+const shrink = (frames, from, to) => {
+  const t0 = frames[0].t, t1 = frames[frames.length - 1].t;
+  return frames.map((f) => {
+    const k = from + (to - from) * ((f.t - t0) / (t1 - t0));
+    // Scale around the image centre, like a subject moving away from the lens.
+    return { ...f, p: f.p.map(([x, y, v]) => [0.28 + (x - 0.28) * k, 0.5 + (y - 0.5) * k, v]) };
+  });
+};
+
+test('getting smaller on screen (no zoom) does not trigger a zoom warning and is compensated', () => {
+  const base = makeClimb({ cycles: 8 });
+  const a = analyze(base);
+  const b = analyze(shrink(base, 1, 0.6));
+  assert.ok(!b.warnings.some((w) => /zoom/i.test(w)), `unexpected warning: ${b.warnings.join(' | ')}`);
+  assert.equal(b.metrics.scaleCompensated, true);
+  assert.ok(b.metrics.scaleChange < 0.7);
+  assert.equal(b.metrics.handMoves, a.metrics.handMoves);
+  assert.ok(Math.abs(b.metrics.footMoves - a.metrics.footMoves) <= 1, `feet ${b.metrics.footMoves} vs ${a.metrics.footMoves}`);
+  // Height climbed (in body units) should match the constant-size version.
+  assert.ok(Math.abs(b.metrics.heightGain - a.metrics.heightGain) / a.metrics.heightGain < 0.12, `height ${b.metrics.heightGain} vs ${a.metrics.heightGain}`);
+  const c = coach(b);
+  assert.ok(c.notes.some((n) => /smaller on screen/.test(n)));
+});
+
+test('a steady video leaves the tracks untouched', () => {
+  const r = analyze(makeClimb({ cycles: 8 }));
+  assert.equal(r.metrics.scaleCompensated, false);
+  assert.ok(!r.warnings.some((w) => /zoom/i.test(w)));
+});
+
+test('a short lean (torso shorter on screen for a moment) is not treated as a size change', () => {
+  const frames = makeClimb({ cycles: 8 }).map((f) => {
+    if (f.t < 10 || f.t > 11.5) return f;
+    // Lean in: shoulders drop toward the hips on screen.
+    const p = f.p.map((q) => q.slice());
+    for (const i of [0, 11, 12, 13, 14, 15, 16]) p[i][1] += 0.04;
+    return { ...f, p };
+  });
+  const r = analyze(frames);
+  assert.equal(r.metrics.scaleCompensated, false);
+});

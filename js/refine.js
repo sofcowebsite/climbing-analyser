@@ -258,7 +258,74 @@ export function refinePoses(rawFrames, { maxBridgeSec = 2.5 } = {}) {
     }
     return { ...f, p: any ? p : null };
   });
-  return { frames: out, world, coreOk, T, bones };
+  const scale = normalizeScale(world, times, dt, coreOk);
+  return { frames: out, world, coreOk, T: scale.applied ? scale.ref : T, bones, scale };
+}
+
+/**
+ * The climber's apparent size can drift during a video without any zoom: filmed from the
+ * base of a crag they get smaller as they climb away from the camera. Measurements assume a
+ * constant body size, so this rescales the tracks (in place) to one: every frame's pose is
+ * scaled around the hips to the typical torso length, and the hip path is re-integrated at
+ * the matching scale. Short leans and turns (which also shorten the torso on screen) are
+ * ignored by using a rolling upper percentile over a few seconds.
+ * Returns { applied, ref, first, last, ratio }.
+ */
+export function normalizeScale(world, times, dt, coreOk) {
+  const n = times.length;
+  const tors = new Array(n).fill(NaN);
+  for (let i = 0; i < n; i++) {
+    if (!coreOk[i] || Math.min(world[11].conf[i], world[12].conf[i], world[23].conf[i], world[24].conf[i]) < 0.5) continue;
+    const sm = [(world[11].x[i] + world[12].x[i]) / 2, (world[11].y[i] + world[12].y[i]) / 2];
+    const hm = [(world[23].x[i] + world[24].x[i]) / 2, (world[23].y[i] + world[24].y[i]) / 2];
+    const d = dist(sm, hm);
+    if (isNum(d) && d > 0) tors[i] = d;
+  }
+  const W = Math.max(2, Math.round(2 / dt));
+  let local = tors.map((_, i) => {
+    const win = tors.slice(Math.max(0, i - W), Math.min(n, i + W + 1)).filter(isNum);
+    return win.length >= 5 ? quantile(win, 0.8) : NaN;
+  });
+  // Fill gaps from the nearest known value, then smooth.
+  let lastKnown = NaN;
+  local = local.map((v) => (isNum(v) ? (lastKnown = v) : lastKnown));
+  lastKnown = NaN;
+  for (let i = n - 1; i >= 0; i--) { if (isNum(local[i])) lastKnown = local[i]; else local[i] = lastKnown; }
+  local = smoothArr(local, Math.max(1, Math.round(1 / dt) | 1));
+  const known = local.filter(isNum);
+  if (known.length < 5) return { applied: false, ratio: 1 };
+  const ref = median(known);
+  const q = Math.max(1, Math.floor(known.length / 4));
+  const first = median(known.slice(0, q)), last = median(known.slice(-q));
+  const spread = Math.max(...known) / Math.min(...known);
+  const info = { ref, first, last, ratio: last / first, spread };
+  // Small drifts are within measurement noise; leave the tracks untouched.
+  if (spread < 1.15) return { ...info, applied: false };
+
+  const hip = (i) => [(world[23].x[i] + world[24].x[i]) / 2, (world[23].y[i] + world[24].y[i]) / 2];
+  let C = null, cPrev = null, kPrev = NaN;
+  const idxs = Object.keys(world).map(Number);
+  for (let i = 0; i < n; i++) {
+    const k = isNum(local[i]) ? ref / local[i] : 1;
+    const c = hip(i);
+    const hasHip = isNum(c[0]) && isNum(c[1]);
+    // Anchor for this frame: where the hips should be in the rescaled world.
+    let anchorC, anchorRaw;
+    if (hasHip) {
+      if (!C) C = c.slice();
+      else C = [C[0] + (c[0] - cPrev[0]) * (k + kPrev) / 2, C[1] + (c[1] - cPrev[1]) * (k + kPrev) / 2];
+      cPrev = c; kPrev = k;
+      anchorC = C; anchorRaw = c;
+    } else if (cPrev) { anchorC = C; anchorRaw = cPrev; } else { anchorC = null; }
+    for (const idx of idxs) {
+      const x = world[idx].x[i], y = world[idx].y[i];
+      if (!isNum(x) || !isNum(y)) continue;
+      if (!anchorC) { world[idx].x[i] = x * k; world[idx].y[i] = y * k; continue; }
+      world[idx].x[i] = anchorC[0] + (x - anchorRaw[0]) * k;
+      world[idx].y[i] = anchorC[1] + (y - anchorRaw[1]) * k;
+    }
+  }
+  return { ...info, applied: true };
 }
 
 // Stored (packed) track -> frames in the format analyze()/refinePoses() expect.

@@ -38,7 +38,7 @@
           <ul>
             <li><strong>Filming from far away is fine.</strong> The app zooms in on the climber by itself. Record in <strong>4K</strong> (Settings → Camera → Record Video) so there's more detail to zoom into.</li>
             <li><strong>Use the 2× or 3× lens</strong> if the whole route still fits in frame. The bigger the climber appears, the better.</li>
-            <li><strong>Keep the camera as still as you can.</strong> A tripod or a rock works best. Slow pans to follow the climber are compensated for, but avoid zooming while filming.</li>
+            <li><strong>Keep the camera as still as you can.</strong> A tripod or a rock works best. Slow pans to follow the climber, and getting smaller as the climber moves away, are compensated for. Just avoid sudden zooms.</li>
             <li><strong>Keep the climber's whole body in view,</strong> feet included.</li>
             <li><strong>Mind the light.</strong> Avoid filming into the sun or against bright sky. Clothing that contrasts with the rock helps a lot.</li>
             <li><strong>Tap the climber</strong> before analysing, so the belayer or other climbers aren't tracked by mistake.</li>
@@ -215,7 +215,7 @@
         <ul>
           <li>It sees a flat 2D picture. It can't measure how close your hips are to the wall, the wall angle, or where the holds are.</li>
           <li>The pose model wasn't trained specifically on climbers. Unusual positions, occlusion or poor light can confuse it.</li>
-          <li>Camera pans are compensated for by tracking the rock in the background, but zooming during a video isn't. Against plain sky there's nothing to track, so keep the camera still there.</li>
+          <li>Camera pans are compensated for by tracking the rock in the background, and gradual changes in your size on screen (climbing away from the camera) are rescaled. Sudden zoom jumps, and plain sky with no rock to track, are still hard, so keep the camera steady there.</li>
           <li>Very far away (the climber is only a few dozen pixels tall) gives rough hand and foot measurements. Record in 4K or zoom in.</li>
           <li>The scores are guidance, not a verdict. Use them to spot trends over many sessions.</li>
           <li>It can't see the holds, so it can't know whether the last hold you held was the real finish. That's why you can correct the result. And it's a rules-based analysis of your body movement, not an AI trained on climbing videos, so check its fall explanations against the replay.</li>
