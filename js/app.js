@@ -211,6 +211,7 @@ async function runAnalysis() {
     const track = packTrack(out.frames, out.aspect);
     const thumb = await grabThumbnail(video, (analysis.window.t0 + analysis.window.t1) / 2);
 
+    const auto = { topped: 'sent', finished: 'sent', fell: 'fell', unknown: 'attempt' }[analysis.outcome?.result] || 'attempt';
     const session = {
       id: `s_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
       createdAt: Date.now(),
@@ -219,6 +220,9 @@ async function runAnalysis() {
       videoDuration: video.duration,
       videoHeight: out.height,
       analysisVersion: ANALYSIS_VERSION,
+      // "Detect from video" uses the detected ending; an explicit answer always wins.
+      outcome: details.outcome === 'auto' ? auto : details.outcome,
+      outcomeSource: details.outcome === 'auto' ? 'auto' : 'user',
       settings: { quality: settings.quality, fps: settings.fps },
       analysis,
       report,
@@ -247,10 +251,19 @@ async function showResult(session) {
   player.setMarker(null);
   player.setTrack(displayTrack(session.track));
   const box = $('result-step');
-  renderReport(box, session, { heightCm: settings.heightCm, onSeek: (t) => player.seek(t), history: await store.listSessions() });
-  box.append(h('div', { class: 'actions' },
-    h('label', { class: 'btn btn-primary btn-block', for: 'file-input', text: 'Analyse another video' }),
-  ));
+  const history = await store.listSessions();
+  const track = displayTrack(session.track);
+  const draw = () => {
+    renderReport(box, session, {
+      heightCm: settings.heightCm, history, track, aspect: session.track?.aspect,
+      onSeek: (t, rate) => player.seek(t, rate),
+      onSetOutcome: async (val) => { session.outcome = val; session.outcomeSource = 'user'; await store.saveSession(session); draw(); toast('Saved.'); },
+    });
+    box.append(h('div', { class: 'actions' },
+      h('label', { class: 'btn btn-primary btn-block', for: 'file-input', text: 'Analyse another video' }),
+    ));
+  };
+  draw();
   $('video-area').scrollIntoView({ block: 'start' });
   window.scrollTo(0, 0);
 }
@@ -266,6 +279,8 @@ async function upgradeSession(s) {
       if (analysis.ok) s.analysis = analysis;
     }
     s.report = coach(s.analysis);
+    // Climbs saved before auto-detection had their result chosen by hand.
+    if (!s.outcomeSource) s.outcomeSource = 'user';
     s.analysisVersion = ANALYSIS_VERSION;
     await store.saveSession(s);
   } catch (e) { console.warn('Could not upgrade session', s.id, e); }
@@ -326,12 +341,18 @@ async function openSession(id, fromProgress = false) {
   const extra = h('div', {}, videoArea, attachBtn, attachInput);
   const reportBox = h('div', { class: 'view' });
 
-  const render = (canSeek) => renderReport(reportBox, s, {
-    history,
-    heightCm: settings.heightCm,
-    onSeek: canSeek ? (t) => detailPlayer.seek(t) : null,
-    extra,
-  });
+  const track = displayTrack(s.track);
+  let seekable = false;
+  const render = (canSeek = seekable) => {
+    seekable = canSeek;
+    renderReport(reportBox, s, {
+      history, track, aspect: s.track?.aspect,
+      heightCm: settings.heightCm,
+      onSeek: canSeek ? (t, rate) => detailPlayer.seek(t, rate) : null,
+      onSetOutcome: async (val) => { s.outcome = val; s.outcomeSource = 'user'; await store.saveSession(s); render(); toast('Saved.'); },
+      extra,
+    });
+  };
   attachInput.addEventListener('change', async () => {
     const f = attachInput.files[0];
     attachInput.value = '';

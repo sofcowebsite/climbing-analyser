@@ -209,7 +209,18 @@ export function createPlayer(container) {
     cancelPick() { stopPicking(); },
     setMarker(m) { marker = m; draw(); },
     showControls(on) { video.controls = on; controls.hidden = !on; },
-    seek(t) { video.pause(); video.currentTime = Math.max(0, t); wrap.scrollIntoView({ behavior: 'smooth', block: 'center' }); },
+    // seek(t) jumps there paused; seek(t, rate) plays from there at that speed (e.g. 0.5 for slow motion).
+    seek(t, rate) {
+      video.pause();
+      video.currentTime = Math.max(0, t);
+      wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (rate) {
+        video.playbackRate = rate;
+        slow.textContent = `Speed: ${rate}×`;
+        speedIdx = Math.max(0, speeds.indexOf(rate));
+        video.play().catch(() => {});
+      }
+    },
     destroy() {
       ro.disconnect();
       cancelAnimationFrame(raf);

@@ -86,3 +86,99 @@ export function makeClimb(style = {}) {
   if (style.occludeLegs) frames.truth = truth;
   return frames;
 }
+
+// Appends a scripted ending to a climb, for testing finish/fall detection.
+// kind: 'missedCatch' | 'footSlip' | 'pumpFall' | 'barnDoor' | 'matchJump' | 'mantle' | 'lower' | 'outTop'
+export function withEnding(frames, kind, { fps = 10 } = {}) {
+  const T = 0.12, g = 19 * T; // gravity in image units per s²
+  const out = frames.slice();
+  let t = out[out.length - 1].t;
+  let p = out[out.length - 1].p.map((q) => q.slice());
+  const push = (pp, cam) => { t += 1 / fps; out.push({ t, p: pp ? pp.map((q) => q.slice()) : null, ...(cam ? { cam } : {}) }); };
+  const hold = (sec) => { for (let i = 0; i < sec * fps; i++) push(p); };
+  const move = (idxs, dx, dy, sec) => {
+    const n = Math.max(1, Math.round(sec * fps));
+    const start = idxs.map((i) => p[i].slice());
+    for (let k = 1; k <= n; k++) {
+      const e = k / n, s = e * e * (3 - 2 * e);
+      idxs.forEach((i, j) => { p[i] = [start[j][0] + dx * s, start[j][1] + dy * s, p[i][2]]; });
+      push(p);
+    }
+  };
+  const all = Array.from({ length: 33 }, (_, i) => i);
+  const body = all.filter((i) => ![15, 16].includes(i));
+  const fallAll = (sec, idxs = all) => {
+    const start = idxs.map((i) => p[i].slice());
+    for (let k = 1; k <= sec * fps; k++) {
+      const tt = k / fps, dy = Math.min(0.5 * g * tt * tt, 6 * T);
+      idxs.forEach((i, j) => { p[i] = [start[j][0], start[j][1] + dy, p[i][2]]; });
+      push(p);
+    }
+  };
+  const RH = [16], LF = [27, 29, 31], RF = [28, 30, 32];
+  switch (kind) {
+    case 'missedCatch':
+      hold(1.5);
+      move(RH, 0.02, -1.0 * T, 0.5); // reach up...
+      hold(0.2); // ...touch it...
+      fallAll(1.0); // ...and come straight off
+      hold(1.5);
+      break;
+    case 'footSlip':
+      hold(2);
+      move(LF, 0, 0.6 * T, 0.15); // left foot skates off
+      hold(0.25);
+      fallAll(1.0);
+      hold(1.5);
+      break;
+    case 'pumpFall':
+      hold(6); // stuck, hanging on
+      move([15, 16], 0, 0.3 * T, 0.2); // hands peel off
+      fallAll(1.0);
+      hold(1.5);
+      break;
+    case 'barnDoor': {
+      hold(1.5);
+      // Everything except the right hand and right foot swings out to the left.
+      const swing = all.filter((i) => ![16, 28, 30, 32].includes(i));
+      move(swing, -0.9 * T, 0.1 * T, 0.5);
+      fallAll(1.0);
+      hold(1.5);
+      break;
+    }
+    case 'matchJump':
+      hold(1);
+      move([15], p[16][0] - p[15][0] - 0.1 * T, p[16][1] - p[15][1], 0.6); // match
+      hold(2.5); // hold the finish
+      fallAll(1.0); // jump off
+      hold(1.5);
+      break;
+    case 'mantle': {
+      hold(1);
+      // Hands stay on the lip; body rises until the hands are at the hips.
+      const hands = [15, 16];
+      const handY = Math.min(p[15][1], p[16][1]);
+      const rise = (p[23][1] + p[24][1]) / 2 - handY + 0.1 * T;
+      move(body, 0, -rise, 2.5);
+      // Feet up to the lip, then stand.
+      move([...LF, ...RF, 25, 26], 0, -(p[27][1] - handY) - 0.1 * T, 1.0);
+      move(all.filter((i) => !hands.includes(i)), 0, -0.8 * T, 0.8);
+      hold(1.5);
+      break;
+    }
+    case 'lower':
+      hold(2.5);
+      move(all, 0, 4 * T, 5); // steady lower-off
+      hold(1);
+      break;
+    case 'outTop': {
+      // Keep climbing up and out of the picture.
+      const top = Math.min(p[0][1], p[11][1], p[12][1]);
+      move(all, 0, -(top - 0.05), 3);
+      for (let i = 0; i < 1.5 * fps; i++) push(null);
+      break;
+    }
+    default: throw new Error(`unknown ending ${kind}`);
+  }
+  return out;
+}

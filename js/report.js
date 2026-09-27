@@ -2,6 +2,7 @@
 
 import { lineChart, scoreBars } from './charts.js';
 import { scoreLabel, scoreStatus } from './coach.js';
+import { createFallReplay } from './fallview.js';
 import { GRADE_SCALES } from './grades.js';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -55,6 +56,15 @@ function card(title, ...children) {
   return h('div', { class: 'card' }, title ? h('h3', { text: title }) : null, ...children);
 }
 
+const CONF_TEXT = { high: 'Sure', medium: 'Fairly sure', low: 'Not sure' };
+function confBadge(c) {
+  if (!c) return null;
+  return h('span', { class: `conf conf-${c}`, title: 'How sure the analysis is', text: CONF_TEXT[c] });
+}
+
+const OUTCOME_CHOICES = [['sent', 'Sent / topped'], ['fell', 'Fell'], ['attempt', 'Still working it']];
+const RESULT_TO_OUTCOME = { topped: 'sent', finished: 'sent', fell: 'fell', unknown: 'attempt' };
+
 function labelled(label, text, cls = '') {
   if (!text) return null;
   return h('p', { class: `labelled ${cls}` }, h('strong', { text: `${label} ` }), text);
@@ -98,12 +108,70 @@ export function renderReport(container, session, opts = {}) {
     container.append(h('div', { class: 'card warn' }, h('h3', { text: 'Heads up' }), a.warnings.map((w) => h('p', { text: w }))));
   }
 
+  // ----- how did it end? -----
+  const oc = r.outcome || a.outcome;
+  if (oc) {
+    const detected = RESULT_TO_OUTCOME[oc.result];
+    const userSet = session.outcomeSource === 'user' && session.outcome;
+    const disagree = userSet && detected && userSet !== detected && oc.confidence !== 'low' && oc.result !== 'unknown';
+    const choice = h('div', { class: 'choice-row' }, OUTCOME_CHOICES.map(([val, label]) => {
+      const b = h('button', { type: 'button', class: `btn btn-small${session.outcome === val ? ' btn-primary' : ''}`, text: label });
+      if (opts.onSetOutcome) b.addEventListener('click', () => opts.onSetOutcome(val)); else b.disabled = true;
+      return b;
+    }));
+    container.append(h('div', { class: 'card' },
+      h('div', { class: 'bar-head' }, h('h3', { text: `How it ended: ${oc.headline}` }), confBadge(oc.confidence)),
+      h('ul', { class: 'evidence' }, oc.evidence.map((e) => h('li', { text: e }))),
+      oc.alternatives.length ? h('p', { class: 'muted small', text: oc.alternatives.join(' ') }) : null,
+      disagree ? h('p', { class: 'warn-inline', text: `You marked this climb as "${OUTCOME_CHOICES.find((x) => x[0] === userSet)[1]}", but the video looks different. Check the replay below. If you're right, keep your answer; your answer is what counts in your stats.` }) : null,
+      h('p', { class: 'small', style: 'margin-top:8px', text: session.outcomeSource === 'user' ? 'Your answer:' : 'Is this right? Tap to correct it:' }),
+      choice,
+    ));
+  }
+
+  // ----- falls -----
+  for (const f of r.fallAnalyses || []) {
+    const replayBox = h('div');
+    const p = f.primary;
+    container.append(h('div', { class: 'card fall-card' },
+      h('h3', { text: f.headline }),
+      h('p', { class: 'muted small', text: f.detail }),
+      replayBox,
+      p ? h('div', { class: 'cause' },
+        h('div', { class: 'bar-head' }, h('h4', { text: p.key === 'unclear' ? p.title : `Most likely: ${p.title}` }), confBadge(p.confidence)),
+        labelled('What we saw:', p.evidence),
+        labelled('Why that makes you fall:', p.why),
+        h('p', { class: 'labelled' }, h('strong', { text: 'How to fix it:' })),
+        h('ul', { class: 'fixes' }, p.fixes.map((x) => h('li', { text: x }))),
+        h('div', { class: 'drill', text: p.drill }),
+      ) : null,
+      f.secondary.length ? h('details', { class: 'also' },
+        h('summary', { text: `Also contributing (${f.secondary.length})` }),
+        f.secondary.map((c) => h('div', { class: 'cause' },
+          h('div', { class: 'bar-head' }, h('h4', { text: c.title }), confBadge(c.confidence)),
+          h('p', { class: 'small', text: c.evidence }),
+          h('ul', { class: 'fixes' }, c.fixes.slice(0, 2).map((x) => h('li', { text: x }))),
+        )),
+      ) : null,
+      f.nextAttempt.length ? h('div', { class: 'next-attempt' },
+        h('h4', { text: 'On your next attempt' }),
+        h('ol', {}, f.nextAttempt.map((x) => h('li', { text: x }))),
+      ) : null,
+    ));
+    if (opts.track && f.replay) {
+      requestAnimationFrame(() => createFallReplay(replayBox, opts.track, opts.aspect || 0.5625, {
+        t0: f.replay.t0, t1: f.replay.t1, tFall: f.t, highlight: p?.limb,
+        onWatchVideo: canSeek ? (t) => opts.onSeek(t, 0.5) : null,
+      }));
+    }
+  }
+
   // ----- action plan -----
   if (r.actionPlan?.length) {
     container.append(card('Your plan for next session',
       h('p', { class: 'muted small', text: 'The three changes that would help you most, in priority order.' }),
       h('ol', { class: 'plan' }, r.actionPlan.map((p) => h('li', {},
-        h('h4', { text: p.title }),
+        h('div', { class: 'bar-head' }, h('h4', { text: p.title }), confBadge(p.confidence)),
         labelled('What we saw:', p.saw),
         labelled('Why it matters:', p.why),
         labelled('Next time:', p.doThis, 'cue'),
@@ -148,15 +216,17 @@ export function renderReport(container, session, opts = {}) {
     const listEl = h('ul', { class: 'moves' });
     const renderMoves = (all) => {
       listEl.replaceChildren(...r.moveReview.slice(0, all ? undefined : 6).map((mv) => {
-        const rt = RATING[mv.rating];
+        const rt = { ...RATING[mv.rating] };
+        if (mv.issues > 1) rt.label = `${mv.issues} things to fix`;
         return h('li', { class: `move move-${mv.rating}` },
           h('div', { class: 'move-head' },
             h('strong', { text: `#${mv.n} · ${mv.side === 'left' ? 'Left' : 'Right'} hand` }),
             seekBtn(Math.max(0, mv.t0 - 1)),
             h('span', { class: `status status-${rt.status}`, text: rt.label }),
           ),
-          mv.good.length ? h('ul', { class: 'ticks good' }, mv.good.map((g) => h('li', { text: g }))) : null,
-          mv.bad.length ? h('ul', { class: 'ticks bad' }, mv.bad.map((g) => h('li', { text: g }))) : null,
+          mv.good.length ? h('ul', { class: 'ticks good' }, mv.good.map((g) => h('li', { text: g.text ?? g }))) : null,
+          mv.bad.length ? h('ul', { class: 'ticks bad' }, mv.bad.map((g) => h('li', { text: g.text ?? g }))) : null,
+          !mv.good.length && !mv.bad.length ? h('p', { class: 'muted small', text: 'Same as the patterns above.' }) : null,
           mv.info.length ? h('p', { class: 'muted small', text: mv.info.join(' · ') }) : null,
         );
       }));
@@ -165,8 +235,15 @@ export function renderReport(container, session, opts = {}) {
     const more = r.moveReview.length > 6
       ? h('button', { type: 'button', class: 'btn btn-block btn-small', text: `Show all ${r.moveReview.length} moves`, onclick: (e) => { renderMoves(true); e.target.remove(); } })
       : null;
+    const pats = r.movePatterns || [];
     container.append(card('Move by move',
       h('p', { class: 'small', text: r.moveSummary }),
+      pats.length ? h('div', { class: 'patterns' },
+        h('p', { class: 'small' }, h('strong', { text: 'On most of your moves:' })),
+        pats.filter((x) => x.kind === 'bad').length ? h('ul', { class: 'ticks bad' }, pats.filter((x) => x.kind === 'bad').map((x) => h('li', { text: `${x.text} (${x.count} of ${r.moveReview.length})` }))) : null,
+        pats.filter((x) => x.kind === 'good').length ? h('ul', { class: 'ticks good' }, pats.filter((x) => x.kind === 'good').map((x) => h('li', { text: `${x.text} (${x.count} of ${r.moveReview.length})` }))) : null,
+        h('p', { class: 'muted small', text: 'Below, each move only lists what was different.' }),
+      ) : null,
       canSeek ? h('p', { class: 'muted small', text: 'Tap a time to watch that move (starts 1 s before).' }) : h('p', { class: 'muted small', text: 'Attach the video above to watch each move.' }),
       listEl, more,
     ));
@@ -225,14 +302,18 @@ export function renderReport(container, session, opts = {}) {
             h('span', { class: `status status-${it.info ? 'none' : scoreStatus(it.score)}`, text: it.info ? 'info' : String(it.score) }),
           ),
           h('p', { class: 'muted small', text: it.what }),
-          it.text ? h('p', { text: it.text + (it.moves?.length && !isNum(it.score) ? '' : '') }) : null,
-          it.moves?.length && isNum(it.score) && it.score < 65 ? h('p', { class: 'small', text: `Seen on move${it.moves.length > 1 ? 's' : ''} ${it.moves.map((n) => `#${n}`).join(', ')}.` }) : null,
-          labelled('Why it matters:', it.why),
-          labelled('Next time:', it.cue, 'cue'),
-          h('div', { class: 'drill', text: it.drill }),
-          it.target && (it.info || it.score < 80) ? h('p', { class: 'target' }, h('span', { text: '🎯 Target: ' }), it.target) : null,
+          it.inPlan
+            // Already explained in full in the plan; don't repeat it.
+            ? h('p', { class: 'small' }, h('strong', { text: `Covered in your plan (#${it.inPlan}).` }))
+            : [
+              it.text ? h('p', {}, it.confidence === 'low' ? h('em', { text: 'Possibly: ' }) : null, it.text) : null,
+              labelled('Why it matters:', it.why),
+              !it.info && isNum(it.score) && it.score < 65 ? labelled('Next time:', it.cue, 'cue') : null,
+              !it.info && isNum(it.score) && it.score < 50 ? h('div', { class: 'drill', text: it.drill }) : null,
+            ],
+          it.confidence ? h('p', { class: 'muted small' }, 'Confidence: ', confBadge(it.confidence)) : null,
         );
-        if (!it.info && isNum(it.score) && it.score < 65) d.open = true;
+        if (!it.info && !it.inPlan && isNum(it.score) && it.score < 50) d.open = true;
         return d;
       }),
     ));
@@ -318,6 +399,16 @@ export function renderReport(container, session, opts = {}) {
     container.append(card('Key moments',
       canSeek ? null : h('p', { class: 'muted small', text: 'Attach the video above to jump to these moments.' }),
       h('ul', { class: 'moments' }, a.events.map((e) => eventItem(e, canSeek, opts.onSeek))),
+    ));
+  }
+
+  // ----- how sure are we? -----
+  if (r.reliability) {
+    container.append(h('div', { class: 'card' },
+      h('div', { class: 'bar-head' }, h('h3', { text: 'How sure are we?' }), confBadge(r.reliability.level)),
+      h('p', { text: r.reliability.text }),
+      r.reliability.points.length ? h('ul', { class: 'evidence' }, r.reliability.points.map((x) => h('li', { text: x }))) : null,
+      h('p', { class: 'muted small', text: 'Every finding has its own confidence label. "Not sure" findings are kept out of your plan unless there is nothing better.' }),
     ));
   }
 

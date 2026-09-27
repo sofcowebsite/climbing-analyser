@@ -1,3 +1,6 @@
+import { FALL_CAUSES } from './falladvice.js';
+import { metres } from './outcome.js';
+
 // Turns measurements into scores (0-100) and detailed, plain-language coaching:
 // a per-area breakdown, a move-by-move review, how technique changed from start to top,
 // left/right differences and a prioritised action plan with targets for next session.
@@ -200,29 +203,67 @@ const MOVE_FLAGS = {
 
 export function reviewMove(mv) {
   const good = [], bad = [], info = [];
-  if (mv.feetBefore > 0) good.push(mv.feetUp ? 'Stepped your feet up first' : 'Moved a foot first');
-  else bad.push('Reached without moving your feet first');
+  const g = (k, text) => good.push({ k, text });
+  const b = (k, text) => bad.push({ k, text });
+  if (mv.feetBefore > 0) g('feet', mv.feetUp ? 'Stepped your feet up first' : 'Moved a foot first');
+  else b('feet', 'Reached without moving your feet first');
   if (isNum(mv.holdElbow)) {
-    if (mv.holdElbow >= 145) good.push('Hung off a straight arm while reaching');
-    else if (mv.holdElbow < 110) bad.push(`Held on with a bent arm (${mv.holdElbow}°) while reaching`);
+    if (mv.holdElbow >= 145) g('arm', 'Hung off a straight arm while reaching');
+    else if (mv.holdElbow < 110) b('arm', `Held on with a bent arm (${mv.holdElbow}°) while reaching`);
   }
   if (isNum(mv.legShare)) {
-    if (mv.legShare >= 0.6) good.push('Pushed up with your legs');
-    else if (mv.legShare <= 0.35) bad.push('Pulled up mostly with your arms');
+    if (mv.legShare >= 0.6) g('legs', 'Pushed up with your legs');
+    else if (mv.legShare <= 0.35) b('legs', 'Pulled up mostly with your arms');
   }
   if (isNum(mv.balance)) {
-    if (mv.balance <= 0.3) good.push('Hips over your feet at the start of the move');
-    else if (mv.balance >= 0.7) bad.push('Hips out to the side of your feet');
+    if (mv.balance <= 0.3) g('hips', 'Hips over your feet at the start of the move');
+    else if (mv.balance >= 0.7) b('hips', 'Hips out to the side of your feet');
   }
-  if (mv.hesitated || mv.setup > 4) bad.push(`Hesitated before the move (${f1(mv.setup)} s from the last hold)`);
-  if (mv.cut) bad.push('Feet cut loose');
-  else if (mv.jolt) bad.push('Arrived with a jolt or swing');
-  else good.push('Arrived in control');
-  if (mv.regrip === true) bad.push('Re-gripped the hold after grabbing it');
+  if (mv.hesitated || mv.setup > 4) b('hesitate', `Hesitated before the move (${f1(mv.setup)} s from the last hold)`);
+  if (mv.cut) b('control', 'Feet cut loose');
+  else if (mv.jolt) b('control', 'Arrived with a jolt or swing');
+  else g('control', 'Arrived in control');
+  if (mv.regrip === true) b('regrip', 'Re-gripped the hold after grabbing it');
   if (mv.dynamic) info.push('Dynamic move');
   if (mv.reach >= 1.4) info.push('Long reach');
   const rating = bad.length === 0 ? 'clean' : bad.length === 1 ? 'ok' : 'rough';
   return { good, bad, info, rating };
+}
+
+// Things that happened on most moves are said once as a pattern, not repeated per move.
+function movePatterns(review) {
+  const n = review.length;
+  if (n < 4) return { patterns: [], review };
+  const count = {};
+  for (const mv of review) {
+    for (const x of mv.bad) count[`bad:${x.k}`] = (count[`bad:${x.k}`] || 0) + 1;
+    for (const x of mv.good) count[`good:${x.k}`] = (count[`good:${x.k}`] || 0) + 1;
+  }
+  const common = new Set(Object.entries(count).filter(([, c]) => c / n >= 0.6).map(([k]) => k));
+  const patterns = [...common].map((key) => {
+    const [kind, k] = key.split(':');
+    const sample = review.find((mv) => mv[kind].some((x) => x.k === k))[kind].find((x) => x.k === k);
+    return { kind, k, count: count[key], text: sample.text.replace(/ \(\d+°\)/, '') };
+  }).sort((a, b) => (a.kind === b.kind ? b.count - a.count : a.kind === 'bad' ? -1 : 1));
+  const filtered = review.map((mv) => ({
+    ...mv,
+    good: mv.good.filter((x) => !common.has(`good:${x.k}`)),
+    bad: mv.bad.filter((x) => !common.has(`bad:${x.k}`)),
+  }));
+  return { patterns, review: filtered };
+}
+
+// How sure can we be? Combines tracking quality, how much evidence there is, and whether
+// the body part the finding depends on was actually visible.
+function confidenceFor(it, m, nMoves) {
+  const lvl = { high: 2, medium: 1, low: 0 };
+  let c = lvl[m.trackQuality || 'high'];
+  const samples = nMoves >= 6 ? 2 : nMoves >= 3 ? 1 : 0;
+  c = Math.min(c, samples);
+  if (it.category === 'footwork' && isNum(m.feetVisible)) c = Math.min(c, m.feetVisible >= 0.7 ? 2 : m.feetVisible >= 0.45 ? 1 : 0);
+  // Scores close to the line between "fine" and "needs work" are less certain.
+  if (isNum(it.score) && it.score >= 40 && it.score <= 60) c = Math.min(c, 1);
+  return ['low', 'medium', 'high'][Math.max(0, c)];
 }
 
 // ---------- the full report ----------
@@ -253,66 +294,128 @@ export function coach(result) {
   const catScores = Object.values(categories).map((c) => c.score).filter(isNum);
   const overall = catScores.length ? Math.round(catScores.reduce((a, b) => a + b, 0) / catScores.length) : null;
 
+  for (const it of items) it.confidence = isNum(it.value) ? confidenceFor(it, m, moves.length) : null;
+
   const strengths = [], improvements = [];
   for (const it of items) {
     if (!isNum(it.score)) continue;
-    if (it.score >= 70) strengths.push({ key: it.key, label: it.label, score: it.score, text: it.text });
+    if (it.score >= 70) strengths.push({ key: it.key, label: it.label, score: it.score, text: it.text, confidence: it.confidence });
     else if (it.score < 50) {
-      const evidence = it.moves.length && moves.length ? ` This happened on ${plural(it.moves.length, 'move')} (${list(it.moves)}).` : '';
-      improvements.push({ key: it.key, label: it.label, score: it.score, text: it.text + evidence, drill: it.drill, cue: it.cue, why: it.why, target: it.target, moves: it.moves });
+      const evidence = it.moves.length && moves.length ? ` Seen on ${plural(it.moves.length, 'move')}: ${list(it.moves)}.` : '';
+      const hedge = it.confidence === 'low' ? 'Possibly: ' : '';
+      improvements.push({ key: it.key, label: it.label, score: it.score, text: hedge + it.text + evidence, drill: it.drill, cue: it.cue, why: it.why, target: it.target, moves: it.moves, confidence: it.confidence });
     }
   }
   strengths.sort((a, b) => b.score - a.score);
   improvements.sort((a, b) => a.score - b.score);
 
-  // Move-by-move review.
-  const moveReview = moves.map((mv) => ({ ...mv, ...reviewMove(mv) }));
-  const clean = moveReview.filter((x) => x.rating === 'clean').length;
-  const rough = moveReview.filter((x) => x.rating === 'rough');
-  const best = [...moveReview].sort((a, b) => (b.good.length - b.bad.length) - (a.good.length - a.bad.length))[0];
-  const worst = [...moveReview].sort((a, b) => (b.bad.length - b.good.length) - (a.bad.length - a.good.length))[0];
-  const moveSummary = moveReview.length
-    ? `${plural(moveReview.length, 'hand move')} analysed: ${clean} clean, ${moveReview.length - clean - rough.length} with one issue, ${rough.length} with several.` +
-      (best && best.good.length > best.bad.length ? ` Your best was move #${best.n}: ${best.good.slice(0, 3).join(', ').toLowerCase()}.` : '') +
-      (worst && worst.bad.length >= 2 ? ` Move #${worst.n} needs the most work: ${worst.bad.slice(0, 3).join(', ').toLowerCase()}.` : '')
+  // Move-by-move review, with anything that happened on most moves pulled out as a pattern.
+  const fellOn = new Map((result.falls || []).filter((f) => f.move).map((f, k) => [f.move.n, k + 1]));
+  const rawReview = moves.map((mv) => {
+    const rv = reviewMove(mv);
+    if (fellOn.has(mv.n)) {
+      rv.bad.unshift({ k: 'fell', text: `You came off this move (see Fall ${fellOn.get(mv.n)})` });
+      rv.rating = 'rough';
+    }
+    return { ...mv, ...rv, issues: rv.bad.length };
+  });
+  const { patterns: movePatternsList, review: moveReview } = movePatterns(rawReview);
+  const clean = rawReview.filter((x) => x.rating === 'clean').length;
+  const rough = rawReview.filter((x) => x.rating === 'rough').length;
+  const moveSummary = rawReview.length
+    ? `${plural(rawReview.length, 'hand move')}: ${clean} clean, ${rawReview.length - clean - rough} with one thing to fix, ${rough} with several.`
     : null;
 
   const sectionInsights = sectionAnalysis(result.sections || []);
   const sideInsights = sideAnalysis(result.sides, m);
   const extraInsights = extraAnalysis(result, m);
 
+  // How it ended, and a breakdown of every fall.
+  const outcome = result.outcome || null;
+  const fallAnalyses = (result.falls || []).map((f, k) => describeFall(f, k, result));
+
   // Other observations (not scored).
   const notes = [];
   if (m.rests > 0) {
     notes.push(m.restStraightArm > 0
-      ? `You took ${plural(m.rests, 'proper rest')} (4 s or longer), ${m.restStraightArm} of them on straight arms. That's good energy management.`
-      : `You took ${plural(m.rests, 'rest')} of 4 s or longer, but with bent arms. When resting, straighten your arms, sink your hips and shake out one hand at a time.`);
+      ? `You took ${plural(m.rests, 'proper rest')} (4 s or longer), ${m.restStraightArm} of them on straight arms.`
+      : `You took ${plural(m.rests, 'rest')} of 4 s or longer, but with bent arms, which recovers much less. Straighten the arm, sink the hips and alternate hands every few seconds.`);
   } else if (m.climbTime > 60) {
-    notes.push(`You climbed for ${Math.round(m.climbTime)} s without a proper rest. On longer routes, find a good hold or a no-hands stance and shake out before the hard section.`);
+    notes.push(`You climbed for ${Math.round(m.climbTime)} s without a proper rest. Plan a shake-out on the best hold before the hardest section.`);
   }
   const turn = items.find((i) => i.key === 'turnedShare');
-  if (turn && isNum(turn.value)) notes.push(turn.value >= 0.08 ? turn.text : `${turn.text} ${turn.why} ${turn.cue}`);
+  if (turn && isNum(turn.value)) notes.push(turn.value >= 0.08 ? turn.text : `${turn.text} ${turn.cue}`);
   if (m.dynos > 0) notes.push(`${plural(m.dynos, 'dynamic move')} detected (fast upward body motion).`);
-  if (m.falls > 0) notes.push('A fall or big drop was detected. The analysis covers the climbing up to your high point.');
-  if (m.cameraMoved) notes.push('The camera moved during the video. The app compensated by tracking the rock in the background, but a fixed camera gives the most accurate results.');
 
-  const actionPlan = buildActionPlan(improvements, sectionInsights, sideInsights, extraInsights);
+  const actionPlan = buildActionPlan(improvements, sectionInsights, sideInsights, extraInsights, fallAnalyses);
+  actionPlan.forEach((p, k) => { const it = items.find((i) => i.key === p.key); if (it) it.inPlan = k + 1; });
 
-  // Summary paragraph.
+  // Summary: how it ended first, then the single most useful thing to know.
   const cats = Object.entries(categories).filter(([, c]) => isNum(c.score));
   const bestCat = [...cats].sort((a, b) => b[1].score - a[1].score)[0];
   const worstCat = [...cats].sort((a, b) => a[1].score - b[1].score)[0];
-  let summary = 'Not enough of your body was tracked to score this climb.';
-  if (bestCat && worstCat && bestCat[0] !== worstCat[0]) {
-    summary = `Overall ${scoreLabel(overall).toLowerCase()} (${overall}). Your strongest area was ${bestCat[1].label.toLowerCase()} (${bestCat[1].score}), and the biggest opportunity is ${worstCat[1].label.toLowerCase()} (${worstCat[1].score}).`;
-  } else if (bestCat) {
-    summary = `Overall ${scoreLabel(overall).toLowerCase()} (${overall}).`;
+  const parts = [];
+  if (outcome) {
+    const sure = outcome.confidence === 'high' ? '' : outcome.confidence === 'medium' ? ' (probably)' : ' (not sure)';
+    const endTxt = { topped: 'You topped out', finished: 'You finished the climb', fell: 'You fell', unknown: 'We couldn\'t tell how the climb ended' }[outcome.result] || '';
+    if (endTxt) parts.push(endTxt + (outcome.result === 'unknown' ? '' : sure) + '.');
+    if (outcome.result === 'fell' && fallAnalyses.length) {
+      const f = fallAnalyses[fallAnalyses.length - 1];
+      if (f.primary && f.primary.key !== 'unclear') parts.push(`Most likely cause: ${f.primary.title.toLowerCase()}.`);
+    }
   }
-  const fade = sectionInsights.find((x) => x.kind === 'fatigue');
-  if (fade) summary += ' Your technique slipped as the climb went on.';
-  if (actionPlan[0]) summary += ` Top priority for next time: ${actionPlan[0].title.toLowerCase()}.`;
+  if (bestCat && worstCat && bestCat[0] !== worstCat[0]) {
+    parts.push(`Technique ${overall}/100: strongest in ${bestCat[1].label.toLowerCase()}, weakest in ${worstCat[1].label.toLowerCase()}.`);
+  } else if (bestCat) parts.push(`Technique ${overall}/100.`);
+  if (m.trackQuality === 'low') parts.push('Tracking quality was low, so treat these results as rough.');
+  const summary = parts.join(' ') || 'Not enough of your body was tracked to score this climb.';
 
-  return { overall, categories, items, strengths, improvements, notes, summary, actionPlan, moveReview, moveSummary, sectionInsights, sideInsights, extraInsights };
+  const reliability = reliabilityCheck(m, moves.length, result);
+
+  return { overall, categories, items, strengths, improvements, notes, summary, actionPlan, moveReview, movePatterns: movePatternsList, moveSummary, sectionInsights, sideInsights, extraInsights, outcome, fallAnalyses, reliability };
+}
+
+// ---------- falls ----------
+
+const fmtClock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
+
+function describeFall(f, k, result) {
+  const causes = f.causes.map((c) => ({ ...c, ...(FALL_CAUSES[c.key] || FALL_CAUSES.unclear) }));
+  // Lead with the most solid explanation; keep weaker ones as "also possible".
+  const primary = causes[0] || null;
+  const secondary = causes.slice(1).filter((c) => c.key !== 'unclear');
+  const where = f.move ? ` on move #${f.move.n} (${f.move.side} hand)` : '';
+  const stickTxt = f.stick === null || f.stick === undefined ? '.' : f.stick < 0.1 ? ', the instant your hand reached the hold.' : `, ${f1(f.stick)} s after your hand reached the hold.`;
+  // Next attempt: a short, concrete plan (not a repeat of the fixes above).
+  const next = [];
+  const at = f.replay ? fmtClock(Math.max(0, f.t - 2)) : fmtClock(f.t);
+  next.push(f.move ? `Rehearse move #${f.move.n} on its own, starting from the position you were in at ${at} (see the replay).` : `Rehearse the section around ${at} on its own.`);
+  if (primary) next.push(`Focus on one thing: ${primary.cue}`);
+  const sec = secondary.find((c) => c.confidence !== 'low');
+  if (sec) next.push(`Then add: ${sec.cue}`);
+  if (causes.some((c) => c.key === 'pump' || c.key === 'stalled') && !['pump', 'stalled'].includes(primary?.key)) next.push('Before this section, rest on the last good hold (straight arm, alternate hands) so you arrive fresh.');
+  next.push('Once the move goes on its own, link it from the start. Keep it to 3–4 tries, then rest 5 minutes or more: tired attempts rehearse bad habits.');
+  return {
+    n: k + 1, t: f.t, clock: fmtClock(f.t), drop: f.drop, move: f.move, stick: f.stick, lost: f.lost,
+    headline: `Fall ${k + 1} at ${fmtClock(f.t)}${where}`,
+    detail: `You dropped about ${metres(f.drop)}${stickTxt}`,
+    primary, secondary, nextAttempt: next, replay: f.replay,
+  };
+}
+
+function reliabilityCheck(m, nMoves, result) {
+  const points = [];
+  let score = 3;
+  if (isNum(m.torsoPx)) {
+    if (m.torsoPx < 30) { points.push(`You were small in the video (torso about ${Math.round(m.torsoPx)} px), so fine details like foot placements are rough.`); score -= 1; }
+    else points.push(`You were big enough in the video to track (torso about ${Math.round(m.torsoPx)} px).`);
+  }
+  if (isNum(m.feetVisible) && m.feetVisible < 0.6) { points.push(`Your feet were clearly visible only ${Math.round(m.feetVisible * 100)}% of the time (hidden behind your body or out of frame). Footwork findings are less certain, and hidden stretches were estimated.`); score -= 1; }
+  if (m.trackedRatio < 0.8) { points.push(`Your body was found in ${Math.round(m.trackedRatio * 100)}% of frames.`); score -= 1; }
+  if (nMoves < 4) { points.push(`Only ${plural(nMoves, 'hand move')} detected. That's too few to be sure about patterns.`); score -= 1; }
+  if (m.cameraMoved) points.push('The camera moved; this was compensated for, but it adds some uncertainty to speeds and heights.');
+  const level = score >= 3 ? 'high' : score >= 2 ? 'medium' : 'low';
+  return { level, points, text: level === 'high' ? 'Good tracking: these results should be reliable.' : level === 'medium' ? 'Decent tracking, with some uncertainty. See the notes below.' : 'Weak tracking: treat these results as rough indications.' };
 }
 
 // ---------- start / middle / top ----------
@@ -428,12 +531,27 @@ function extraAnalysis(result, m) {
 
 const PRIORITY_WEIGHT = { footwork: 1.1, arms: 1.05, body: 1, flow: 0.95 };
 
-function buildActionPlan(improvements, sectionInsights, sideInsights, extraInsights) {
-  const cands = improvements.map((i) => ({
+function buildActionPlan(improvements, sectionInsights, sideInsights, extraInsights, fallAnalyses = []) {
+  // Low-confidence findings stay out of the plan unless there's nothing better.
+  const solid = improvements.filter((i) => i.confidence !== 'low');
+  const pool = solid.length ? solid : improvements;
+  const cands = pool.map((i) => ({
     // Core technique (feet, arms) comes before flow when problems are equally bad.
-    key: i.key, title: i.label, priority: (100 - i.score) * (PRIORITY_WEIGHT[METRIC_DEFS.find((d) => d.key === i.key)?.category] || 1),
+    key: i.key, title: i.label, confidence: i.confidence, priority: (100 - i.score) * (PRIORITY_WEIGHT[METRIC_DEFS.find((d) => d.key === i.key)?.category] || 1),
     saw: i.text, why: i.why, doThis: i.cue, drill: i.drill, target: i.target, moves: i.moves,
   }));
+  // What made you fall comes first when we're reasonably sure about it.
+  const lastFall = fallAnalyses[fallAnalyses.length - 1];
+  if (lastFall && lastFall.primary && lastFall.primary.key !== 'unclear' && lastFall.primary.confidence !== 'low') {
+    const c = lastFall.primary;
+    // Short here: the full explanation is in the fall card above the plan.
+    cands.push({
+      key: `fall:${c.key}`, title: `Fix what made you fall: ${c.title.toLowerCase()}`, priority: 200,
+      saw: `${lastFall.headline}: ${c.evidence}`, why: null, doThis: `${c.cue} The full breakdown and replay are in the "${lastFall.headline}" card above.`, drill: null,
+      target: lastFall.move ? `Stick move #${lastFall.move.n} and hold it for a full second before the next move.` : 'Get past this point without coming off.',
+      moves: lastFall.move ? [lastFall.move.n] : [], confidence: c.confidence,
+    });
+  }
   const fade = sectionInsights.find((x) => x.kind === 'fatigue');
   if (fade) cands.push({ title: 'Staying efficient when tired', priority: 55, saw: fade.text, why: 'Most falls happen in the last third of a route, when technique slips under fatigue.', doThis: fade.advice, drill: 'Drill: "Pump laps". Climb an easy route 3 times in a row without resting, focusing on perfect straight arms and footwork on the last lap.', target: 'Keep straight arms and feet-first at the same level in the top third as at the start.' });
   const cuts = extraInsights.find((x) => x.kind === 'feetCuts');

@@ -20,9 +20,12 @@ Any free static host also works: Netlify, Cloudflare Pages, or Vercel. Just poin
 2. **Analyse tab:** choose the video, **tap on the climber** (important when the belayer or other people are in shot), optionally trim it to the climb, add the name, grade and result, then tap **Analyse climb**. Expect roughly 30–90 s per minute of video on a recent iPhone.
 3. **Report:** a detailed breakdown:
    - **Your plan for next session:** the top 3 changes, each with what we saw (and on which moves), why it matters, what to do next time, a drill and a target number.
+   - **How it ended:** topped out, matched and held the top hold, lowered off, or fell. It's detected from the video, with the evidence and a confidence level shown, and you can correct it with one tap. Reaching a hold and coming off within about a second counts as a fall, not a finish.
+   - **Every fall broken down:** an animated skeleton replay of the last 3 seconds, zoomed in with the part that let go highlighted (works without the video). Then the most likely cause (missed catch, late dead-point, over-reach, feet cutting, hand slip, foot slip, barn door, lock-off, stalling, pump), how sure the app is, why it makes you fall, specific fixes, a drill, and a plan for your next attempt.
    - **Move by move:** every hand move with ✓/✗ checks (feet first? straight arm? legs or arms? hips over feet? controlled arrival? hesitation? re-grip?). Tap to watch it.
    - **Start / middle / top:** how your technique changed as you got higher and more tired.
    - **Left vs right:** imbalances between your arms and legs.
+   - **How sure are we?** Every finding carries a confidence level based on tracking quality, how visible the relevant limb was and how much evidence there is. Uncertain findings are worded as "possibly" and kept out of the plan. Issues seen on most moves are reported once as a pattern instead of on every move.
    - **Detailed breakdown per area**, extra observations (feet cutting loose, high steps, shake-outs, stance, pace), and a **comparison with your previous climbs**.
    - Height-over-time chart, key moments, and a video replay with a skeleton overlay.
 4. **History / Progress:** every climb is saved on the device. Progress shows score trends, send rate, hardest send, and your recurring weak spots.
@@ -70,6 +73,9 @@ js/metrics.js                pose frames → metrics (pure, tested)
 js/coach.js                  metrics → scores + feedback (pure, tested)
 js/pose.js                   MediaPipe Pose in the browser + zoomed climber tracking
 js/camera.js                 camera-movement estimation (pure, tested)
+js/outcome.js                finish/top-out/fall detection and fall cause analysis (pure, tested)
+js/falladvice.js             coaching for each fall cause
+js/fallview.js               animated skeleton replay of a fall
 js/refine.js                 pose clean-up: left/right fixes, confidence-weighted smoothing, bone lengths (pure, tested)
 vendor/mediapipe/            MediaPipe Tasks Vision 1.0.1 JS + WASM (Apache 2.0)
 models/                      pose_landmarker lite / full / heavy models (Apache 2.0)

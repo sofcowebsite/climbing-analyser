@@ -152,7 +152,12 @@ test('detailed coaching: action plan, move-by-move, sections, sides', async () =
   assert.equal(c.actionPlan[0].title, 'Feet first');
   assert.equal(c.moveReview.length, r.metrics.handMoves);
   assert.ok(c.moveReview.every((m) => ['clean', 'ok', 'rough'].includes(m.rating)));
-  assert.ok(c.moveReview.some((m) => m.bad.includes('Reached without moving your feet first')));
+  // Reaching without the feet happened on most moves, so it's reported once as a pattern
+  // rather than repeated on every move.
+  const feetPattern = c.movePatterns.find((p) => p.kind === 'bad' && p.k === 'feet');
+  const feetOnMoves = c.moveReview.some((m) => m.bad.some((x) => x.k === 'feet'));
+  assert.ok(feetPattern || feetOnMoves);
+  if (feetPattern) assert.ok(!feetOnMoves, 'pattern should not be repeated per move');
   assert.equal(r.sections.length, 3);
   assert.ok(c.sectionInsights.length >= 1);
   assert.ok(c.sideInsights.length >= 1);
@@ -171,4 +176,72 @@ test('saved sessions can be re-analysed from their stored poses', async () => {
   const direct = analyze(frames);
   assert.equal(again.metrics.handMoves, direct.metrics.handMoves);
   assert.ok(Math.abs(again.metrics.footMoves - direct.metrics.footMoves) <= 1);
+});
+
+// ---------- did they finish? why did they fall? ----------
+import { withEnding } from './synthetic.mjs';
+
+const ending = (kind, style = { cycles: 6 }) => analyze(withEnding(makeClimb(style), kind));
+
+test('a hold touched and dropped within a second is a fall, not a finish', () => {
+  const r = ending('missedCatch');
+  assert.equal(r.outcome.result, 'fell');
+  assert.equal(r.outcome.confidence, 'high');
+  assert.equal(r.falls.length, 1);
+  assert.equal(r.falls[0].causes[0].key, 'missedCatch');
+  assert.ok(r.falls[0].stick < 1);
+  const c = coach(r);
+  assert.ok(c.actionPlan[0].title.startsWith('Fix what made you fall'));
+  assert.ok(c.fallAnalyses[0].nextAttempt.length >= 2);
+});
+
+test('a foot slipping first is identified as the cause', () => {
+  const r = ending('footSlip');
+  assert.equal(r.outcome.result, 'fell');
+  assert.equal(r.falls[0].causes[0].key, 'footSlip');
+  assert.equal(r.falls[0].causes[0].side, 'left');
+});
+
+test('hands peeling off after hanging on bent arms points to the grip / pump', () => {
+  const r = ending('pumpFall', { cycles: 10, bentArms: true });
+  assert.equal(r.outcome.result, 'fell');
+  const keys = r.falls[0].causes.map((c) => c.key);
+  assert.equal(keys[0], 'handSlip');
+  assert.ok(keys.includes('pump') || keys.includes('stalled'));
+});
+
+test('swinging off sideways is a barn door', () => {
+  const r = ending('barnDoor');
+  assert.equal(r.outcome.result, 'fell');
+  assert.ok(r.falls[0].causes.some((c) => c.key === 'barnDoor'));
+});
+
+test('matching the top hold and holding it, then jumping off, is a finish', () => {
+  const r = ending('matchJump');
+  assert.equal(r.outcome.result, 'finished');
+  assert.equal(r.falls.length, 0);
+});
+
+test('a mantle and standing up is a top-out', () => {
+  const r = ending('mantle');
+  assert.equal(r.outcome.result, 'topped');
+  assert.equal(r.outcome.confidence, 'high');
+});
+
+test('climbing out of the top of the frame is a probable top-out', () => {
+  const r = ending('outTop');
+  assert.equal(r.outcome.result, 'topped');
+  assert.equal(r.outcome.confidence, 'medium');
+});
+
+test('lowering off is not mistaken for a fall', () => {
+  const r = ending('lower');
+  assert.notEqual(r.outcome.result, 'fell');
+  assert.equal(r.falls.length, 0);
+});
+
+test('an ordinary climb with no ending does not invent a fall', () => {
+  const r = analyze(makeClimb({ cycles: 8 }));
+  assert.equal(r.falls.length, 0);
+  assert.notEqual(r.outcome.result, 'fell');
 });

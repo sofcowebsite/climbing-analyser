@@ -88,6 +88,7 @@
             </label>
             <label class="field">Result
               <select name="outcome">
+                <option value="auto" selected>Detect from video</option>
                 <option value="sent">Sent</option>
                 <option value="fell">Fell</option>
                 <option value="attempt">Working it</option>
@@ -188,6 +189,7 @@
           <li><strong>Body position:</strong> how far your centre of mass sits to the side of your feet, and how often you turn your hips into the wall.</li>
           <li><strong>Flow:</strong> how direct your body's path is, sudden jolts, hesitations and grip readjustments.</li>
         </ul>
+        <p>It also works out how the climb ended (top-out, matched finish, lower-off or fall). Coming off within about a second of reaching a hold counts as a fall. For every fall it replays the last seconds and looks for the cause: missed catch, late dead-point, over-reach, feet cutting, hand or foot slip, barn door, lock-off, stalling or pump. Every finding shows how sure the app is.</p>
         <p>Each measurement is scored 0–100 against coaching rules. It's then turned into a move-by-move review, a start/middle/top comparison, left vs. right, and a top-3 plan with drills and targets for your next session.</p>
       </details>
 
@@ -199,6 +201,7 @@
           <li>Camera pans are compensated for by tracking the rock in the background, but zooming during a video isn't. Against plain sky there's nothing to track, so keep the camera still there.</li>
           <li>Very far away (the climber is only a few dozen pixels tall) gives rough hand and foot measurements. Record in 4K or zoom in.</li>
           <li>The scores are guidance, not a verdict. Use them to spot trends over many sessions.</li>
+          <li>It can't see the holds, so it can't know whether the last hold you held was the real finish. That's why you can correct the result. And it's a rules-based analysis of your body movement, not an AI trained on climbing videos, so check its fall explanations against the replay.</li>
         </ul>
       </details>
 

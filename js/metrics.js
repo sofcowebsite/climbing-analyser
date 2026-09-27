@@ -18,7 +18,7 @@ export const LM = {
 };
 
 // Bumped when the analysis changes; older saved sessions are re-analysed from their stored poses.
-export const ANALYSIS_VERSION = 3;
+export const ANALYSIS_VERSION = 4;
 
 // Landmarks kept when a session is stored (enough to redraw the skeleton).
 export const KEPT_LANDMARKS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -44,11 +44,11 @@ export const CFG = {
   upwardSpeed: 0.3,
   jerkAccel: 7,
   dynoSpeed: 1.6,
-  fallSpeed: 2.5, fallDrop: 1.2,
   turnedRatio: 0.65,
 };
 
 import { refinePoses, fixLeftRight } from './refine.js';
+import { detectDrops, lostWhileDropping, classifyOutcome } from './outcome.js';
 
 export { fixLeftRight };
 
@@ -311,17 +311,17 @@ export function analyze(frames, opts = {}) {
   const liftIdx = height.findIndex((h) => isNum(h) && h > 0.3);
   if (liftIdx > 0) wStart = Math.max(firstValid, liftIdx - Math.round(1 / dt));
 
-  // Falls: fast, large drop.
-  const falls = [];
-  for (const r of runs(n, (i) => isNum(vY[i]) && vY[i] < -CFG.fallSpeed)) {
-    const hBefore = height[Math.max(0, r.s - 1)];
-    const hAfter = height[Math.min(n - 1, r.e + Math.round(0.5 / dt))];
-    if (isNum(hBefore) && isNum(hAfter) && hBefore - hAfter > CFG.fallDrop) falls.push({ t: times[r.s], drop: hBefore - hAfter });
-  }
-  // End the window at the high point if the climber comes down afterwards (lower-off / fall / jump down).
+  // Significant descents: falls, jumping off, lowering, down-climbing.
+  const drops = detectDrops({ height, vY, times, dt });
+  const lostDrop = lostWhileDropping({ height, vY, times, dt, coreOk });
+  if (lostDrop && !drops.some((d) => Math.abs(d.t - lostDrop.t) < 1)) drops.push(lostDrop);
+  const falls = drops.filter((d) => d.kind === 'fast');
+  // End the window at the high point if the climber comes down afterwards (lower-off / fall / jump down),
+  // but always include the start of a fall so we can see what caused it.
   const lastValid = n - 1 - [...comY].reverse().findIndex(isNum);
   if (maxIdx > wStart && lastValid - maxIdx > Math.round(1.5 / dt) && maxH - height[lastValid] > 0.8) {
-    wEnd = Math.min(lastValid, maxIdx + Math.round(0.5 / dt));
+    const fallAfter = falls.filter((d) => d.s >= maxIdx - Math.round(1 / dt)).map((d) => d.s);
+    wEnd = Math.min(lastValid, Math.max(maxIdx, ...fallAfter) + Math.round(0.5 / dt));
   } else wEnd = lastValid;
   if (wEnd - wStart < Math.round(3 / dt)) { wStart = firstValid; wEnd = lastValid; }
   const inW = (i) => i >= wStart && i <= wEnd;
@@ -341,7 +341,8 @@ export function analyze(frames, opts = {}) {
     const visible = seenMask.filter((v, i) => v && inW(i)).length / Math.max(1, wEnd - wStart + 1);
     limbs[key] = { ...segmentLimb(xs, ys, times, dt, T, key.endsWith('Hand'), seenMask), visible, xs, ys, seen: seenMask };
   }
-  const handMoves = [...limbs.lHand.moves.map((m) => ({ ...m, side: 'left' })), ...limbs.rHand.moves.map((m) => ({ ...m, side: 'right' }))];
+  const handMoves = [...limbs.lHand.moves.map((m) => ({ ...m, side: 'left' })), ...limbs.rHand.moves.map((m) => ({ ...m, side: 'right' }))]
+    .sort((a, b) => a.t0 - b.t0).map((m, k) => ({ ...m, n: k + 1 }));
   const footMoves = [...limbs.lFoot.moves.map((m) => ({ ...m, side: 'left' })), ...limbs.rFoot.moves.map((m) => ({ ...m, side: 'right' }))];
   const handAdjust = countReadjust(limbs.lHand.moves, limbs.lHand.adjustments) + countReadjust(limbs.rHand.moves, limbs.rHand.adjustments);
   const footAdjust = countReadjust(limbs.lFoot.moves, limbs.lFoot.adjustments) + countReadjust(limbs.rFoot.moves, limbs.rFoot.adjustments);
@@ -485,9 +486,31 @@ export function analyze(frames, opts = {}) {
   });
   Object.assign(metrics, detail.summary);
 
+  // ----- how did it end? did they fall, and why? -----
+  const hOf = (idx) => tracks[idx].y.map((y) => (isNum(y) ? (baseY - y) / T : NaN));
+  const footH = (k) => limbs[k].ys.map((y) => (isNum(y) ? (baseY - y) / T : NaN));
+  const heights = {
+    com: height, hip: hipMid.map((p) => (isNum(p[1]) ? (baseY - p[1]) / T : NaN)),
+    lWrist: hOf(LM.lWrist), rWrist: hOf(LM.rWrist), lShoulder: hOf(LM.lShoulder), rShoulder: hOf(LM.rShoulder),
+    lFoot: footH('lFoot'), rFoot: footH('rFoot'),
+  };
+  const trackQuality = (torsoPx !== null && torsoPx < 30) || trackedRatio < 0.7 ? 'low'
+    : (torsoPx !== null && torsoPx < 50) || feetVisible < 0.6 ? 'medium' : 'high';
+  const octx = {
+    times, dt, n, T, vY, vX, comX, speed, limbs, handMoves, footMoves, elbow, knee, heights, drops,
+    maxIdx, frames, coreOk, trackQuality, climbStart: times[wStart],
+    restsBefore: (t) => rests.some((r) => r.t1 <= t && r.t1 >= t - 60),
+  };
+  const outcome = classifyOutcome(octx);
+  const fallReports = outcome.falls.map((f) => f.autopsy);
+  metrics.falls = outcome.falls.length;
+  metrics.trackQuality = trackQuality;
+  metrics.feetVisible = feetVisible;
+
   // ----- key moments -----
   const events = [];
-  for (const f of falls) events.push({ t: f.t, kind: 'fall', label: 'Fall or drop' });
+  for (const f of outcome.falls) events.push({ t: f.t, kind: 'fall', label: 'Fall' });
+  if (outcome.dismount) events.push({ t: outcome.dismount.t, kind: 'dismount', label: 'Dropped off after finishing' });
   const longest = [...pauses].sort((a, b) => b.dur - a.dur)[0];
   if (longest) events.push({ t: longest.t0, kind: longest.type, label: `Longest ${longest.type === 'rest' ? 'rest' : 'pause'} (${longest.dur.toFixed(1)} s${isNum(longest.elbow) ? `, arms at ${Math.round(longest.elbow)}°` : ''})` });
   for (const j of [...jerky].sort((a, b) => b.a - a.a).slice(0, 3)) events.push({ t: j.t, kind: 'jerk', label: 'Sudden jolt in body movement' });
@@ -515,6 +538,8 @@ export function analyze(frames, opts = {}) {
     ok: true,
     torso: T,
     moves: detail.moves,
+    outcome: { result: outcome.result, confidence: outcome.confidence, headline: outcome.headline, evidence: outcome.evidence, alternatives: outcome.alternatives },
+    falls: fallReports,
     sections: detail.sections,
     sides: detail.sides,
     extras: detail.extras,
