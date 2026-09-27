@@ -82,7 +82,8 @@ export async function requestPersistence() {
 }
 
 const SETTINGS_KEY = 'crux-coach-settings';
-export const DEFAULT_SETTINGS = { quality: 'accurate', preferCpu: false, fps: 10, heightCm: null, units: 'metric' };
+// 12 frames per second: faster frame capture made the extra accuracy affordable.
+export const DEFAULT_SETTINGS = { quality: 'accurate', preferCpu: false, fps: 12, heightCm: null, units: 'metric', settingsVersion: 2 };
 
 // Analysis quality presets: which pose model, and whether to run the mirrored second pass.
 export const QUALITY = {
@@ -96,6 +97,8 @@ export function loadSettings() {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
     // Older versions stored a model name instead of a quality preset.
     if (!saved.quality && saved.model) saved.quality = saved.model === 'lite' ? 'fast' : 'accurate';
+    // Settings saved before v2 stored the old default of 10 fps; move them to the new default.
+    if (!saved.settingsVersion) { if (saved.fps === 10) saved.fps = 12; saved.settingsVersion = 2; }
     return { ...DEFAULT_SETTINGS, ...saved };
   }
   catch { return { ...DEFAULT_SETTINGS }; }

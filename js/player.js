@@ -113,11 +113,24 @@ export function createPlayer(container) {
     return { w: canvas.width, h: canvas.height };
   }
 
+  // Skeleton at time t, blended between the two nearest analysed frames so it moves smoothly
+  // at the video's frame rate instead of jumping 10–15 times a second.
   function frameAt(t) {
     if (!track || !track.t.length) return null;
     let lo = 0, hi = track.t.length - 1;
     while (lo < hi) { const m = (lo + hi) >> 1; if (track.t[m] < t) lo = m + 1; else hi = m; }
-    const i = lo > 0 && Math.abs(track.t[lo - 1] - t) < Math.abs(track.t[lo] - t) ? lo - 1 : lo;
+    const b = lo, a = lo > 0 ? lo - 1 : lo;
+    const pa = track.pts[a], pb = track.pts[b];
+    const ta = track.t[a], tb = track.t[b];
+    if (pa && pb && tb > ta && t >= ta && t <= tb && tb - ta < 0.5) {
+      const f = (t - ta) / (tb - ta);
+      return pa.map((qa, i) => {
+        const qb = pb[i];
+        if (!qa || !qb) return qa || qb;
+        return [qa[0] + (qb[0] - qa[0]) * f, qa[1] + (qb[1] - qa[1]) * f, Math.min(qa[2], qb[2]), qa[3] === 1 || qb[3] === 1 ? 1 : 0];
+      });
+    }
+    const i = Math.abs(track.t[a] - t) < Math.abs(track.t[b] - t) ? a : b;
     return Math.abs(track.t[i] - t) < 0.3 ? track.pts[i] : null;
   }
 
@@ -170,11 +183,22 @@ export function createPlayer(container) {
     wrap.classList.remove('picking');
   }
 
+  // Redraw on every presented video frame when the browser supports it (exactly in sync),
+  // otherwise on every animation frame.
+  const hasVFC = 'requestVideoFrameCallback' in video;
+  let vfc = 0;
   function loop() {
     draw();
-    if (!video.paused && !video.ended) raf = requestAnimationFrame(loop);
+    if (video.paused || video.ended) return;
+    if (hasVFC) vfc = video.requestVideoFrameCallback(loop);
+    else raf = requestAnimationFrame(loop);
   }
-  video.addEventListener('play', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); });
+  video.addEventListener('play', () => {
+    cancelAnimationFrame(raf);
+    if (hasVFC && vfc) video.cancelVideoFrameCallback(vfc);
+    loop();
+  });
+  video.addEventListener('pause', draw);
   video.addEventListener('seeked', draw);
   video.addEventListener('loadeddata', draw);
   const ro = new ResizeObserver(draw);
@@ -224,6 +248,7 @@ export function createPlayer(container) {
     destroy() {
       ro.disconnect();
       cancelAnimationFrame(raf);
+      if (hasVFC && vfc) video.cancelVideoFrameCallback(vfc);
       video.removeAttribute('src');
       video.load();
       if (url) URL.revokeObjectURL(url);

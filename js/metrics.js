@@ -438,7 +438,7 @@ export function analyze(frames, opts = {}) {
   }
   const hStart = height[wStart], hEnd = Math.max(...height.slice(wStart, wEnd + 1).filter(isNum));
   const net = Math.hypot((pathSm.x[wEnd] - pathSm.x[wStart]) || 0, (hEnd - (hStart || 0)) * T);
-  const pathEfficiency = pathLen > T ? Math.min(1, net / pathLen) : null;
+  const pathEfficiency = pathLen > T && isNum(net) ? Math.min(1, net / pathLen) : null;
 
   // ----- dynamic moves -----
   const dynos = runs(n, (i) => inW(i) && isNum(vY[i]) && vY[i] > CFG.dynoSpeed)

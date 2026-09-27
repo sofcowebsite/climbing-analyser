@@ -82,8 +82,24 @@ $('file-input').addEventListener('change', async (e) => {
   await openVideo(file);
 });
 
+// Load the pose model in the background as soon as there's a video, so Analyse starts
+// straight away. The status line under the Analyse button shows how far it's got.
+let modelReady = false;
+function startPreload() {
+  const q = store.QUALITY[settings.quality] || store.QUALITY.accurate;
+  const el = $('model-status');
+  modelReady = false;
+  const onP = (f) => { if (!modelReady) el.textContent = `Preparing the pose model… ${Math.round(f * 100)}%`; };
+  el.textContent = 'Preparing the pose model…';
+  import('./pose.js').then((pose) => pose.preload(q.model, settings.preferCpu, onP))
+    .then(() => { modelReady = true; el.textContent = 'Pose model ready ✓'; })
+    .catch((e) => { console.warn('Preload failed', e); el.textContent = ''; })
+    .finally(() => import('./pose.js').then((pose) => pose.stopPreloadProgress(onP)));
+}
+
 async function openVideo(file) {
   currentFile = file;
+  startPreload();
   if (player) player.destroy();
   player = createPlayer($('video-area'));
   step('setup');
@@ -139,8 +155,13 @@ function setProgress(title, frac, detail) {
 
 async function grabThumbnail(video, t) {
   try {
-    video.currentTime = t;
-    await new Promise((r) => video.addEventListener('seeked', r, { once: true }));
+    // "seeked" never fires if the video is already there, so don't wait forever.
+    if (Math.abs(video.currentTime - t) > 0.01) {
+      await Promise.race([
+        new Promise((r) => { video.addEventListener('seeked', r, { once: true }); video.currentTime = t; }),
+        new Promise((r) => setTimeout(r, 3000)),
+      ]);
+    }
     const c = document.createElement('canvas');
     const s = 160 / Math.max(video.videoWidth, video.videoHeight);
     c.width = Math.round(video.videoWidth * s);
@@ -153,6 +174,9 @@ async function grabThumbnail(video, t) {
 $('analyse-btn').addEventListener('click', runAnalysis);
 
 async function runAnalysis() {
+  if (abort || !player) return; // already running (double tap)
+  abort = new AbortController();
+  $('analyse-btn').disabled = true;
   const video = player.video;
   const form = $('details-form');
   const details = {
@@ -169,17 +193,18 @@ async function runAnalysis() {
 
   player.cancelPick();
   step('progress');
-  abort = new AbortController();
   let wakeLock = null;
   try { wakeLock = await navigator.wakeLock?.request('screen'); } catch { /* unsupported */ }
   setProgress('Loading the pose model…', 0.02, 'The first run downloads about 20 MB, and it\'s cached after that.');
 
-  const started = performance.now();
   try {
     const pose = await import('./pose.js');
     const q = store.QUALITY[settings.quality] || store.QUALITY.accurate;
-    if (q.model === 'heavy') setProgress('Loading the high-accuracy pose model…', 0.02, 'The first run downloads about 30 MB, and it\'s cached after that.');
-    let { landmarker, delegate } = await pose.loadWithFallback(q.model, settings.preferCpu);
+    const onLoad = (f) => setProgress(modelReady ? 'Starting…' : 'Loading the pose model…', 0.02 + 0.08 * f,
+      `${Math.round(f * 100)}% · the first run downloads ${q.model === 'heavy' ? 'about 40' : q.model === 'lite' ? 'about 17' : 'about 21'} MB, and it's cached after that.`);
+    let { landmarker, delegate } = await pose.preload(q.model, settings.preferCpu, onLoad);
+    pose.stopPreloadProgress(onLoad);
+    const analysisStart = performance.now();
     const run = async (lm) => pose.processVideo(video, {
       landmarker: lm,
       fps: Number(settings.fps) || 10,
@@ -190,7 +215,7 @@ async function runAnalysis() {
       twoPass: q.twoPass,
       onFrame: (frac, pts, box) => {
         player.setLive(pts, box);
-        const el = (performance.now() - started) / 1000;
+        const el = (performance.now() - analysisStart) / 1000;
         const eta = frac > 0.03 ? Math.max(0, el / frac - el) : null;
         setProgress('Analysing your climb…', frac, `${Math.round(frac * 100)}%${eta !== null ? ` · about ${Math.ceil(eta)} s left` : ''}. Keep this screen open.`);
       },
@@ -243,6 +268,7 @@ async function runAnalysis() {
     }
   } finally {
     abort = null;
+    $('analyse-btn').disabled = false;
     try { await wakeLock?.release(); } catch { /* already released */ }
   }
 }
@@ -250,10 +276,10 @@ async function runAnalysis() {
 async function showResult(session) {
   step('result');
   player.setMarker(null);
-  player.setTrack(displayTrack(session.track));
+  const track = displayTrack(session.track);
+  player.setTrack(track);
   const box = $('result-step');
   const history = await store.listSessions();
-  const track = displayTrack(session.track);
   const draw = () => {
     renderReport(box, session, {
       heightCm: settings.heightCm, history, track, aspect: session.track?.aspect,
@@ -363,7 +389,7 @@ async function openSession(id, fromProgress = false) {
     try {
       await detailPlayer.load(f);
       if (s.videoDuration && Math.abs(detailPlayer.video.duration - s.videoDuration) > 1) toast('This video is a different length from the one analysed. The skeleton may not line up.');
-      detailPlayer.setTrack(displayTrack(s.track));
+      detailPlayer.setTrack(track);
       attachBtn.hidden = true;
       render(true);
     } catch (err) { toast(err.message); }
@@ -398,9 +424,9 @@ function bindSettings() {
     settings.heightCm = v >= 100 && v <= 230 ? v : null;
     store.saveSettings(settings);
   });
-  $('set-model').addEventListener('change', (e) => { settings.quality = e.target.value; store.saveSettings(settings); });
+  $('set-model').addEventListener('change', (e) => { settings.quality = e.target.value; store.saveSettings(settings); if (player) startPreload(); });
   $('set-fps').addEventListener('change', (e) => { settings.fps = Number(e.target.value); store.saveSettings(settings); });
-  $('set-cpu').addEventListener('change', (e) => { settings.preferCpu = e.target.checked; store.saveSettings(settings); });
+  $('set-cpu').addEventListener('change', (e) => { settings.preferCpu = e.target.checked; store.saveSettings(settings); if (player) startPreload(); });
 }
 bindSettings();
 
