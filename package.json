@@ -1,0 +1,11 @@
+{
+  "name": "crux-coach",
+  "version": "1.0.0",
+  "private": true,
+  "description": "On-device climbing technique analysis web app",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Crux Coach</title>
+  <meta name="description" content="Upload a climbing video and get on-device technique analysis: footwork, straight arms, balance and flow.">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Crux Coach">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="view-title">Analyse</h1>
+  </header>
+
+  <main id="main">
+    <!-- ANALYSE -->
+    <section id="view-analyse" class="view" data-title="Analyse">
+      <div id="pick-step">
+        <div class="card hero-card">
+          <h2>Analyse a climb</h2>
+          <p class="muted">Pick a video from your Photos. It's analysed on your phone. Nothing is uploaded anywhere.</p>
+          <label class="btn btn-primary btn-block" for="file-input">Choose climbing video</label>
+          <input id="file-input" type="file" accept="video/*" hidden>
+        </div>
+        <details class="card tips" open>
+          <summary>How to film for the best results</summary>
+          <ul>
+            <li><strong>Keep the phone still.</strong> Use a tripod or prop it against something. A moving camera spoils the movement measurements.</li>
+            <li><strong>Get your whole body in frame</strong> for the whole climb, feet included. Film from 3–6 m back.</li>
+            <li><strong>Film from behind or slightly to the side,</strong> facing the wall.</li>
+            <li><strong>Good light</strong> and clothing that stands out from the wall both help tracking.</li>
+            <li><strong>One climber in shot.</strong> Keep clips under about 3 minutes.</li>
+          </ul>
+        </details>
+      </div>
+
+      <div id="video-area" hidden></div>
+
+      <div id="setup-step" hidden>
+        <div class="card">
+          <h3>Trim to the climb <span class="muted small">(optional)</span></h3>
+          <p class="muted small">Play or scrub the video, then set where the climb starts and ends.</p>
+          <div class="trim-row">
+            <div>
+              <div class="small muted">Start</div>
+              <div class="trim-val" id="trim-start-val">0:00.0</div>
+            </div>
+            <button class="btn btn-small" id="set-start">Set to current</button>
+          </div>
+          <div class="trim-row">
+            <div>
+              <div class="small muted">End</div>
+              <div class="trim-val" id="trim-end-val">—</div>
+            </div>
+            <button class="btn btn-small" id="set-end">Set to current</button>
+          </div>
+          <button class="btn btn-link small" id="reset-trim">Reset trim</button>
+        </div>
+
+        <form class="card" id="details-form" autocomplete="off">
+          <h3>Climb details</h3>
+          <label class="field">Name
+            <input name="name" type="text" placeholder="e.g. Blue overhang, wall 3" maxlength="80">
+          </label>
+          <div class="field-row">
+            <label class="field">Type
+              <select name="type">
+                <option value="boulder">Boulder</option>
+                <option value="top-rope">Top rope</option>
+                <option value="lead">Lead</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label class="field">Result
+              <select name="outcome">
+                <option value="sent">Sent</option>
+                <option value="fell">Fell</option>
+                <option value="attempt">Working it</option>
+              </select>
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field">Grade scale
+              <select name="gradeScale" id="grade-scale"></select>
+            </label>
+            <label class="field">Grade
+              <select name="grade" id="grade"></select>
+            </label>
+          </div>
+          <label class="field">Notes
+            <textarea name="notes" rows="2" maxlength="500" placeholder="How did it feel?"></textarea>
+          </label>
+        </form>
+
+        <div class="actions">
+          <button class="btn btn-primary btn-block" id="analyse-btn">Analyse climb</button>
+          <button class="btn btn-block" id="change-video">Choose a different video</button>
+        </div>
+      </div>
+
+      <div id="progress-step" hidden>
+        <div class="card">
+          <h3 id="progress-title">Loading the pose model…</h3>
+          <div class="progress"><div class="progress-fill" id="progress-fill"></div></div>
+          <p class="muted small" id="progress-detail">The first run downloads about 20 MB, and it's cached after that.</p>
+          <button class="btn btn-block" id="cancel-btn">Cancel</button>
+        </div>
+      </div>
+
+      <div id="result-step" hidden></div>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="view-history" class="view" data-title="History" hidden>
+      <div id="history-list"></div>
+      <div id="history-detail" hidden></div>
+    </section>
+
+    <!-- PROGRESS -->
+    <section id="view-progress" class="view" data-title="Progress" hidden>
+      <div id="progress-content"></div>
+    </section>
+
+    <!-- GUIDE / SETTINGS -->
+    <section id="view-guide" class="view" data-title="Guide" hidden>
+      <div class="card" id="install-card">
+        <h3>Install on your iPhone</h3>
+        <p>In Safari, tap <strong>Share</strong> and then <strong>Add to Home Screen</strong>. Crux Coach then opens like an app and works offline. iOS also keeps your saved sessions more reliably for installed apps.</p>
+      </div>
+
+      <div class="card">
+        <h3>Settings</h3>
+        <label class="field">Your height (cm)
+          <input id="set-height" type="number" inputmode="numeric" min="100" max="230" placeholder="Used to estimate metres climbed">
+        </label>
+        <label class="field">Analysis quality
+          <select id="set-model">
+            <option value="full">Accurate (recommended)</option>
+            <option value="lite">Fast</option>
+          </select>
+        </label>
+        <label class="field">Frames analysed per second
+          <select id="set-fps">
+            <option value="8">8 (quicker)</option>
+            <option value="10">10 (balanced)</option>
+            <option value="15">15 (more detail, slower)</option>
+          </select>
+        </label>
+        <label class="check">
+          <input id="set-cpu" type="checkbox">
+          Compatibility mode (use CPU). Turn this on if analysis fails or finds no body.
+        </label>
+      </div>
+
+      <div class="card">
+        <h3>Your data</h3>
+        <p class="muted small">Sessions are stored only on this device. Export a backup now and then, because iOS can clear website data.</p>
+        <div class="btn-col">
+          <button class="btn btn-block" id="export-btn">Export backup</button>
+          <label class="btn btn-block" for="import-input">Import backup</label>
+          <input id="import-input" type="file" accept="application/json,.json" hidden>
+          <button class="btn btn-block btn-danger" id="clear-btn">Delete all sessions</button>
+        </div>
+      </div>
+
+      <details class="card">
+        <summary>How the analysis works</summary>
+        <p>Crux Coach runs Google's MediaPipe Pose model in your browser. It finds 33 body points (shoulders, elbows, wrists, hips, knees, ankles, toes) in about 10 frames per second of your video. From those points it measures:</p>
+        <ul>
+          <li><strong>Footwork:</strong> how often your feet move compared with your hands, and whether they stay put once placed.</li>
+          <li><strong>Arm efficiency:</strong> elbow angle when you're holding still, and whether upward movement comes from straightening your knees or bending your elbows.</li>
+          <li><strong>Body position:</strong> how far your centre of mass sits to the side of your feet, and how often you turn your hips into the wall.</li>
+          <li><strong>Flow:</strong> how direct your body's path is, sudden jolts, hesitations and grip readjustments.</li>
+        </ul>
+        <p>Each measurement is scored 0–100 against simple coaching rules, and then turned into feedback and drills.</p>
+      </details>
+
+      <details class="card">
+        <summary>Limitations</summary>
+        <ul>
+          <li>It sees a flat 2D picture. It can't measure how close your hips are to the wall, the wall angle, or where the holds are.</li>
+          <li>The pose model wasn't trained specifically on climbers. Unusual positions, occlusion or poor light can confuse it.</li>
+          <li>A moving or zooming camera will distort the movement measurements.</li>
+          <li>The scores are guidance, not a verdict. Use them to spot trends over many sessions.</li>
+        </ul>
+      </details>
+
+      <details class="card">
+        <summary>Privacy</summary>
+        <p>Your videos never leave your phone. There are no accounts, no servers and no tracking. Saved sessions contain only the measurements and a small thumbnail.</p>
+      </details>
+      <p class="muted small center">Crux Coach · pose model © Google (Apache 2.0)</p>
+    </section>
+  </main>
+
+  <nav class="tabbar" aria-label="Main">
+    <button data-view="analyse" class="active" aria-current="page">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h3l2-3h6l2 3h3v13H4z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/></svg>
+      <span>Analyse</span>
+    </button>
+    <button data-view="history">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+      <span>History</span>
+    </button>
+    <button data-view="progress">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18M5 16l4-5 4 3 6-8"/></svg>
+      <span>Progress</span>
+    </button>
+    <button data-view="guide">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM12 11v6M12 7.5v.5"/></svg>
+      <span>Guide</span>
+    </button>
+  </nav>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
