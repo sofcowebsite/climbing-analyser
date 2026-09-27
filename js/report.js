@@ -3,6 +3,7 @@
 import { lineChart, scoreBars } from './charts.js';
 import { scoreLabel, scoreStatus } from './coach.js';
 import { createFallReplay } from './fallview.js';
+import { renderTimeline, labelsExport, STATE_CATS } from './timeline.js';
 import { GRADE_SCALES } from './grades.js';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -249,6 +250,37 @@ export function renderReport(container, session, opts = {}) {
     ));
   }
 
+  // ----- how you moved (movement states), repertoire, timeline -----
+  const mv = r.movement;
+  if (mv && a.labels) {
+    const total = STATE_CATS.reduce((acc, [k]) => acc + (mv.share[k] || 0), 0) || 1;
+    const bar = h('div', { class: 'stack', role: 'img', 'aria-label': `Time split: ${STATE_CATS.map(([k, l]) => `${l} ${Math.round((mv.share[k] || 0) * 100)}%`).join(', ')}` },
+      STATE_CATS.filter(([k]) => (mv.share[k] || 0) > 0).map(([k, , cls]) => h('span', { class: `stack-seg ${cls}`, style: `flex:${(mv.share[k] || 0) / total}` })));
+    container.append(card('How you moved',
+      h('p', { class: 'muted small', text: 'Where your time went, using the movement states from climbing research (PLOS ONE, 2017).' }),
+      bar,
+      h('div', { class: 'legend' }, STATE_CATS.map(([k, label, cls]) => h('span', {}, h('i', { class: `lane-key ${cls}` }), `${label} ${Math.round((mv.share[k] || 0) * 100)}%`))),
+      h('p', { class: 'small', style: 'margin-top:8px', text: `${mv.fluency.stops} stops · ${mv.fluency.handProbes} hand probes · ${mv.fluency.footProbes} foot probes · body rose with the hand on ${mv.fluency.controlledMoves} of ${mv.fluency.upMoves} upward moves` }),
+      mv.insights.map((x) => h('div', { class: 'insight' }, h('h4', { text: x.title }), h('p', { text: x.text }), x.advice ? labelled('Next time:', x.advice, 'cue') : null)),
+      h('p', { class: 'muted small', text: mv.caveat }),
+    ));
+    container.append(card('Technique repertoire',
+      mv.seen.length
+        ? h('div', { class: 'chips' }, mv.seen.map((x) => h('span', { class: 'chip', title: `Detection confidence: ${x.conf}` }, `${x.label} ×${x.n}`, h('small', { text: x.conf === 'low' ? ' (not sure)' : '' }))))
+        : h('p', { class: 'muted', text: 'No specific techniques (flags, drop knees, matches, cross-throughs, high steps…) were clearly seen.' }),
+      h('p', { class: 'small', style: 'margin-top:8px' }, h('strong', { text: `For ${mv.terrain === 'unknown' ? 'this climb' : `${mv.terrain} terrain`}:` })),
+      h('ul', { class: 'fixes' }, mv.suggestions.map((x) => h('li', { text: x }))),
+    ));
+    const tl = h('div');
+    const exportBtn = h('button', { type: 'button', class: 'btn btn-small', text: 'Export labels (JSON)', onclick: () => exportLabels(session) });
+    container.append(card('Movement timeline',
+      h('p', { class: 'muted small', text: 'Each half second is labelled with what your body and each hand and foot were doing. Anything a single camera can\'t show (grip type, hips-to-wall distance, whether a foot is weighted) is marked unknown, not guessed.' }),
+      tl,
+      h('div', { class: 'actions', style: 'margin-top:8px' }, exportBtn),
+    ));
+    requestAnimationFrame(() => renderTimeline(tl, a.labels, { fmtTime: (t) => fmtTime(t, true), onSeek: canSeek ? (t) => opts.onSeek(t, 0.5) : null }));
+  }
+
   // ----- start / middle / top -----
   if (a.sections?.length === 3) {
     const row = (label, f) => h('tr', {}, h('td', { text: label }), a.sections.map((s) => h('td', { class: 'num', text: f(s) })));
@@ -439,6 +471,17 @@ export function renderReport(container, session, opts = {}) {
       h('tbody', {}, rows, extra),
     )),
   ));
+}
+
+async function exportLabels(session) {
+  const json = JSON.stringify(labelsExport(session), null, 1);
+  const name = `crux-labels-${(session.name || 'climb').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${new Date(session.createdAt).toISOString().slice(0, 10)}.json`;
+  const file = new File([json], name, { type: 'application/json' });
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'Climbing movement labels' }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = h('a', { href: URL.createObjectURL(file), download: name });
+  document.body.append(a); a.click(); a.remove();
 }
 
 function eventItem(e, canSeek, onSeek) {

@@ -18,7 +18,7 @@ export const LM = {
 };
 
 // Bumped when the analysis changes; older saved sessions are re-analysed from their stored poses.
-export const ANALYSIS_VERSION = 4;
+export const ANALYSIS_VERSION = 5;
 
 // Landmarks kept when a session is stored (enough to redraw the skeleton).
 export const KEPT_LANDMARKS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -49,6 +49,7 @@ export const CFG = {
 
 import { refinePoses, fixLeftRight } from './refine.js';
 import { detectDrops, lostWhileDropping, classifyOutcome } from './outcome.js';
+import { buildLabels } from './labels.js';
 
 export { fixLeftRight };
 
@@ -504,6 +505,17 @@ export function analyze(frames, opts = {}) {
   const outcome = classifyOutcome(octx);
   const fallReports = outcome.falls.map((f) => f.autopsy);
   metrics.falls = outcome.falls.length;
+
+  // ----- multi-label movement timeline (see labels.js) -----
+  const labels = buildLabels({
+    ...octx, tracks, swRatio, pauses, wStart, wEnd, terrain: opts.terrain,
+    falls: outcome.falls, fallReports, jerky, shakeOuts: detail.extras.shakeOuts,
+  });
+  metrics.exploreShare = labels.fluency.share.hold_exploration;
+  metrics.immobileShare = labels.fluency.share.immobility;
+  metrics.stops = labels.fluency.stops;
+  metrics.probes = labels.fluency.probes;
+  metrics.controlledProgress = labels.fluency.upMoves >= 3 ? labels.fluency.controlledMoves / labels.fluency.upMoves : null;
   metrics.trackQuality = trackQuality;
   metrics.feetVisible = feetVisible;
 
@@ -540,6 +552,7 @@ export function analyze(frames, opts = {}) {
     moves: detail.moves,
     outcome: { result: outcome.result, confidence: outcome.confidence, headline: outcome.headline, evidence: outcome.evidence, alternatives: outcome.alternatives },
     falls: fallReports,
+    labels,
     sections: detail.sections,
     sides: detail.sides,
     extras: detail.extras,

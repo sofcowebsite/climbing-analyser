@@ -1,5 +1,6 @@
 :root {
   color-scheme: light;
+  --cat-1: #2a78d6; --cat-2: #eb6834; --cat-3: #1baf7a; --cat-4: #eda100; --cat-5: #e87ba4;
   --page: #f9f9f7;
   --surface: #fcfcfb;
   --surface-2: #f0efec;
@@ -45,6 +46,7 @@
     --good-text: #0ca30c;
     --warning-text: #fab219;
     --critical-text: #e66767;
+    --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500; --cat-5: #d55181;
   }
 }
 :root[data-theme="dark"] {
@@ -66,6 +68,7 @@
   --good-text: #0ca30c;
   --warning-text: #fab219;
   --critical-text: #e66767;
+  --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500; --cat-5: #d55181;
 }
 
 * { box-sizing: border-box; }
@@ -214,6 +217,28 @@ details.card[open] > summary { margin-bottom: 10px; }
   padding: 10px 0; color: var(--ink); font: 15px var(--font); cursor: pointer;
 }
 .moments .time { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; min-width: 52px; }
+
+/* Movement states, repertoire, timeline */
+.cat-1 { fill: var(--cat-1); background: var(--cat-1); }
+.cat-2 { fill: var(--cat-2); background: var(--cat-2); }
+.cat-3 { fill: var(--cat-3); background: var(--cat-3); }
+.cat-4 { fill: var(--cat-4); background: var(--cat-4); }
+.cat-5 { fill: var(--cat-5); background: var(--cat-5); }
+.lane-hold { fill: var(--muted); background: var(--muted); opacity: 0.45; }
+.legend i.lane-hold { opacity: 0.45; }
+.lane-unknown { fill: var(--surface-2); background: var(--surface-2); stroke: var(--grid); stroke-dasharray: 3 2; }
+.stack { display: flex; gap: 2px; height: 16px; border-radius: 4px; overflow: hidden; margin: 8px 0; }
+.stack-seg { display: block; height: 100%; min-width: 2px; }
+.legend i.lane-key { width: 12px; height: 10px; border-radius: 2px; }
+.legend i.lane-unknown { border: 1px dashed var(--grid); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 14px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); }
+.chip small { color: var(--muted); }
+.evtick { stroke: var(--ink-2); stroke-width: 1.5; }
+.evtick-fall { stroke: var(--critical); stroke-width: 2.5; }
+.inspector { margin-top: 10px; font-size: 14px; color: var(--ink-2); }
+.inspector-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; color: var(--ink); }
+table.data.compact td { padding: 4px 4px; font-size: 13px; }
 
 /* Outcome, falls, confidence */
 .conf { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid var(--border); }

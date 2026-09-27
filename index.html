@@ -103,6 +103,18 @@
               <select name="grade" id="grade"></select>
             </label>
           </div>
+          <label class="field">Terrain
+            <select name="terrain">
+              <option value="unknown">Not sure / mixed</option>
+              <option value="slab">Slab (less than vertical)</option>
+              <option value="vertical">Vertical</option>
+              <option value="overhang">Overhang</option>
+              <option value="roof">Roof</option>
+              <option value="arete">Arête</option>
+              <option value="corner/dihedral">Corner / dihedral</option>
+              <option value="crack">Crack</option>
+            </select>
+          </label>
           <label class="field">Notes
             <textarea name="notes" rows="2" maxlength="500" placeholder="How did it feel?"></textarea>
           </label>
@@ -190,6 +202,7 @@
           <li><strong>Flow:</strong> how direct your body's path is, sudden jolts, hesitations and grip readjustments.</li>
         </ul>
         <p>It also works out how the climb ended (top-out, matched finish, lower-off or fall). Coming off within about a second of reaching a hold counts as a fall. For every fall it replays the last seconds and looks for the cause: missed catch, late dead-point, over-reach, feet cutting, hand or foot slip, barn door, lock-off, stalling or pump. Every finding shows how sure the app is.</p>
+        <p>Every half second is also labelled with what your body and each hand and foot were doing, following a research-based framework for climbing video. Anything one camera can't show (grip type, how close your hips are to the wall, whether a foot is weighted) is marked "unknown" instead of guessed. You can export these labels.</p>
         <p>Each measurement is scored 0–100 against coaching rules. It's then turned into a move-by-move review, a start/middle/top comparison, left vs. right, and a top-3 plan with drills and targets for your next session.</p>
       </details>
 

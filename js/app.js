@@ -162,6 +162,7 @@ async function runAnalysis() {
     gradeScale: form.elements.gradeScale.value,
     grade: form.elements.grade.value,
     notes: form.elements.notes.value.trim(),
+    terrain: form.elements.terrain.value,
   };
   // Prime decoding inside the tap (iOS won't seek an untouched video reliably).
   try { await video.play(); video.pause(); } catch { /* fine */ }
@@ -205,7 +206,7 @@ async function runAnalysis() {
 
     setProgress('Working out your technique…', 1, '');
     window.__crux.lastRun = out; // for debugging and automated tests
-    const analysis = analyze(out.frames, { frameHeightPx: out.height });
+    const analysis = analyze(out.frames, { frameHeightPx: out.height, terrain: details.terrain });
     if (!analysis.ok) throw new Error(analysis.reason);
     const report = coach(analysis);
     const track = packTrack(out.frames, out.aspect);
@@ -275,7 +276,7 @@ async function upgradeSession(s) {
   if ((s.analysisVersion || 1) >= ANALYSIS_VERSION) return s;
   try {
     if (s.track) {
-      const analysis = analyze(framesFromTrack(s.track), { frameHeightPx: s.videoHeight || null });
+      const analysis = analyze(framesFromTrack(s.track), { frameHeightPx: s.videoHeight || null, terrain: s.terrain });
       if (analysis.ok) s.analysis = analysis;
     }
     s.report = coach(s.analysis);

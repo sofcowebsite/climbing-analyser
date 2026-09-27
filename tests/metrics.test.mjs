@@ -245,3 +245,48 @@ test('an ordinary climb with no ending does not invent a fall', () => {
   assert.equal(r.falls.length, 0);
   assert.notEqual(r.outcome.result, 'fell');
 });
+
+// ---------- multi-label movement timeline ----------
+
+test('movement labels: every window carries the full label set, with unknowns where the camera cannot see', () => {
+  const r = analyze(makeClimb({ cycles: 6 }), { terrain: 'vertical' });
+  const L = r.labels;
+  assert.ok(L.segments.length > 20);
+  const need = ['segment_role', 'movement_mode', 'contact_count_visible', 'hand_left', 'hand_right', 'foot_left', 'foot_right',
+    'hand_grip_visible', 'body_orientation', 'hip_wall_relation', 'hip_motion', 'arm_posture', 'leg_posture', 'balance_proxy',
+    'flag', 'movement_family', 'terrain_context', 'handhold_orientation', 'crack_subtype', 'transition_event', 'outcome', 'visibility_confidence'];
+  for (const sg of L.segments.filter((x) => x.labels.visibility_confidence === 'clear')) {
+    for (const k of need) assert.ok(k in sg.labels, `missing ${k}`);
+    // Never guessed from a single camera:
+    assert.equal(sg.labels.hand_grip_visible, 'unknown');
+    assert.equal(sg.labels.hip_wall_relation, 'unknown');
+    assert.equal(sg.labels.crack_subtype, 'unknown');
+    assert.equal(sg.labels.terrain_context, 'vertical');
+  }
+  // PLOS ONE-style state shares add up to ~1.
+  const tot = Object.values(L.fluency.share).reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(tot - 1) < 0.02);
+  assert.equal(L.fluency.controlledMoves, L.fluency.upMoves);
+});
+
+test('movement labels: probes, matches, cross-throughs, flags and drop knees', () => {
+  const lab = (k) => analyze(withEnding(makeClimb({ cycles: 6 }), k)).labels;
+  const plain = analyze(makeClimb({ cycles: 6 })).labels;
+  assert.equal(plain.fluency.probes, 0);
+  assert.equal(plain.repertoire.handMatches + plain.repertoire.crossThroughs + plain.repertoire.flags + plain.repertoire.dropKnees, 0);
+  assert.equal(lab('probe').fluency.probes, 1);
+  assert.ok(lab('probe').events.some((e) => e.type === 'touch/probe' && e.side === 'right'));
+  assert.equal(lab('match').repertoire.handMatches, 1);
+  assert.equal(lab('crossThrough').repertoire.crossThroughs, 1);
+  assert.deepEqual(lab('flag').repertoire.flagKinds, ['outside_flag_left']);
+  const dk = lab('dropKnee');
+  assert.ok(dk.repertoire.dropKnees >= 2);
+  assert.ok(dk.segments.slice(-3).every((s) => s.labels.body_orientation.startsWith('side_on')));
+});
+
+test('movement labels: a fall window is labelled as a failed contact, not a stable hold', () => {
+  const L = analyze(withEnding(makeClimb({ cycles: 6 }), 'missedCatch')).labels;
+  const sg = L.segments.find((s) => s.labels.outcome === 'failed_contact');
+  assert.ok(sg);
+  assert.notEqual(sg.labels.balance_proxy, 'stable');
+});

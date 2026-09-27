@@ -371,8 +371,98 @@ export function coach(result) {
   const summary = parts.join(' ') || 'Not enough of your body was tracked to score this climb.';
 
   const reliability = reliabilityCheck(m, moves.length, result);
+  const movement = movementAnalysis(result.labels);
 
-  return { overall, categories, items, strengths, improvements, notes, summary, actionPlan, moveReview, movePatterns: movePatternsList, moveSummary, sectionInsights, sideInsights, extraInsights, outcome, fallAnalyses, reliability };
+  return { overall, categories, items, strengths, improvements, notes, summary, actionPlan, moveReview, movePatterns: movePatternsList, moveSummary, sectionInsights, sideInsights, extraInsights, outcome, fallAnalyses, reliability, movement };
+}
+
+// ---------- how you moved (movement states) and technique repertoire ----------
+
+const STATE_INFO = {
+  immobility: { label: 'Still', what: 'No limb and no hip movement.' },
+  postural_regulation: { label: 'Adjusting body', what: 'Hips moving while all hands and feet stay put (finding balance or position).' },
+  hold_exploration: { label: 'Exploring', what: 'A hand or foot moving without ending up on a new hold (probing, testing, re-placing).' },
+  hold_change: { label: 'Changing holds', what: 'A hand or foot travelling to a new hold that it then uses.' },
+  hold_traction: { label: 'Pulling / pushing up', what: 'Body rising while the hands and feet stay on their holds.' },
+};
+export { STATE_INFO };
+
+const TERRAIN_TIPS = {
+  slab: { want: ['highSteps'], tips: ['On slab, your weight goes through your feet: keep your hips out from the wall and over your feet, heels low for maximum rubber, and use your hands for balance rather than pulling.', 'Small, frequent foot moves and high steps with a rock-over are usually more secure than long reaches.'] },
+  vertical: { want: ['flags', 'highSteps'], tips: ['On vertical rock, flagging and high steps let you keep your weight over one foot for longer reaches.'] },
+  overhang: { want: ['dropKnees', 'flags'], tips: ['On overhangs, turning your hips in (drop knees, back-steps) and keeping toe tension are what keep your feet on and your arms straight.', 'Expect feet to cut on big moves: brace your core and toe-pull through the catch.'] },
+  roof: { want: ['dropKnees'], tips: ['In roofs, heel and toe hooks and hip-to-the-rock body tension do most of the work. The camera can\'t see hooks, so check them on the replay.'] },
+  arete: { want: ['flags'], tips: ['On arêtes, laybacking, heel hooks round the edge and flagging stop the barn door.'] },
+  'corner/dihedral': { want: ['stems'], tips: ['In corners, stemming between the two walls often gives no-hands rests. Look for them before you get pumped.'] },
+  crack: { want: [], tips: ['Jams can\'t be seen well enough from one camera to judge. The analysis treats your crack moves generically, so check jam technique on the replay.'] },
+};
+
+function movementAnalysis(labels) {
+  if (!labels) return null;
+  const f = labels.fluency, rep = labels.repertoire;
+  const insights = [];
+  const pc = (v) => `${Math.round((v || 0) * 100)}%`;
+  if (f.handProbes >= 2 || (f.share.hold_exploration || 0) >= 0.15) {
+    insights.push({
+      title: 'A lot of exploring',
+      text: `You touched ${plural(f.handProbes, 'hold')} with a hand and let go again without using ${f.handProbes === 1 ? 'it' : 'them'}${f.footProbes ? `, and tested ${plural(f.footProbes, 'foothold')}` : ''}. ${pc(f.share.hold_exploration)} of your time was exploring, against ${pc(f.share.hold_change)} actually moving between holds.`,
+      advice: 'That\'s normal when you don\'t know a route yet. A route-previewing study (PLOS ONE, 2017) linked reading the route beforehand with fewer and shorter stops. Before you start, name each hold you\'ll use, in order, and which hand takes it.',
+    });
+  }
+  if (f.stops >= 3) {
+    insights.push({
+      title: `${f.stops} stops`,
+      text: `You came to a complete stop ${f.stops} times (1 s or longer, ${f1(f.stopAvg)} s on average, ${f1(f.stopTotal)} s in total).`,
+      advice: 'Some stops are planned rests, which is fine. The costly ones are mid-sequence stops on poor holds. Compare them with the rests in the timeline below, and plan where you\'ll stop before you start.',
+    });
+  }
+  if ((f.share.postural_regulation || 0) >= 0.2) {
+    insights.push({
+      title: 'Lots of body adjusting',
+      text: `${pc(f.share.postural_regulation)} of your time was spent shifting your body while all four limbs stayed put.`,
+      advice: 'This is usually searching for balance before a move. Set your hip position deliberately (over the foot you\'ll push from) and then commit, rather than shuffling until it feels right.',
+    });
+  }
+  if (f.upMoves >= 3 && f.controlledMoves / f.upMoves < 0.6) {
+    insights.push({
+      title: 'Reaching without the body following',
+      text: `On ${f.upMoves - f.controlledMoves} of ${f.upMoves} upward hand moves your body didn't rise along with the move. The hand went up, but your centre of mass stayed where it was.`,
+      advice: 'In a controlled move the body rises from the legs as the hand travels (the IFSC definition of a controlled move is exactly this: centre of mass rising while the hand moves to the next hold). Start each move by driving the hips up, and let the hand arrive at the top of that motion.',
+    });
+  }
+  if (!insights.length) insights.push({ title: 'Efficient movement pattern', text: `Most of your time went into moving between holds (${pc(f.share.hold_change)}) and pulling/pushing up (${pc(f.share.hold_traction)}), with little exploring and few stops.`, advice: '' });
+
+  // Repertoire: what was seen (with how sure), and what might help on this terrain.
+  const seen = [];
+  const addSeen = (n, label, conf) => { if (n > 0) seen.push({ label, n, conf }); };
+  addSeen(rep.highSteps, 'High steps', 'medium');
+  addSeen(rep.flags, `Flags${rep.flagKinds.length ? ` (${rep.flagKinds.map((k) => k.replace(/_/g, ' ')).join(', ')})` : ''}`, 'low');
+  addSeen(rep.dropKnees ? Math.max(1, Math.round(rep.dropKnees / 2)) : 0, 'Drop knees', 'low');
+  addSeen(rep.frog ? 1 : 0, 'Frog positions', 'low');
+  addSeen(rep.handMatches, 'Hand matches', 'medium');
+  addSeen(rep.footMatches, 'Foot matches', 'medium');
+  addSeen(rep.footSwaps, 'Foot swaps', 'medium');
+  addSeen(rep.crossThroughs, 'Cross-throughs', 'medium');
+  addSeen(rep.crossovers, 'Foot crossovers', 'low');
+  addSeen(rep.catches, 'Dynamic catches', 'medium');
+  addSeen(rep.downclimbs, 'Down-climbing moves', 'medium');
+  for (const [fam, n] of Object.entries(rep.families || {})) addSeen(n ? 1 : 0, fam.charAt(0).toUpperCase() + fam.slice(1), 'low');
+  const terrain = labels.terrain;
+  const tt = TERRAIN_TIPS[terrain];
+  const suggestions = [];
+  if (tt) {
+    for (const w of tt.want) {
+      const have = w === 'stems' ? (rep.families?.stemming || 0) : rep[w];
+      if (!have) suggestions.push({ highSteps: 'No high steps seen: look for high footholds to rock over before long reaches.', flags: 'No flags seen: when both feet are on one side, flag the other leg to stop the swing.', dropKnees: 'No drop knees seen: on steep ground a drop knee often turns a hard pull into a reach.', stems: 'No stemming seen: in a corner, bridging between the walls can take the weight off your arms.' }[w]);
+    }
+    suggestions.push(...tt.tips);
+  } else {
+    suggestions.push('Set the terrain (slab, vertical, overhang, …) when you analyse a climb to get advice specific to the rock angle.');
+  }
+  return {
+    share: f.share, fluency: f, insights, seen, suggestions, terrain,
+    caveat: 'These are observations of what your body did, not a measure of skill. Movement labels come from body-position rules on a single camera view, and each carries a confidence level.',
+  };
 }
 
 // ---------- falls ----------

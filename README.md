@@ -22,6 +22,9 @@ Any free static host also works: Netlify, Cloudflare Pages, or Vercel. Just poin
    - **Your plan for next session:** the top 3 changes, each with what we saw (and on which moves), why it matters, what to do next time, a drill and a target number.
    - **How it ended:** topped out, matched and held the top hold, lowered off, or fell. It's detected from the video, with the evidence and a confidence level shown, and you can correct it with one tap. Reaching a hold and coming off within about a second counts as a fall, not a finish.
    - **Every fall broken down:** an animated skeleton replay of the last 3 seconds, zoomed in with the part that let go highlighted (works without the video). Then the most likely cause (missed catch, late dead-point, over-reach, feet cutting, hand slip, foot slip, barn door, lock-off, stalling, pump), how sure the app is, why it makes you fall, specific fixes, a drill, and a plan for your next attempt.
+   - **How you moved:** time spent still, adjusting your body, exploring holds, changing holds and pulling/pushing up (the movement states from the PLOS ONE 2017 route-previewing study), plus stops, probes (touching a hold and letting go) and the IFSC-style check that your body rises as the hand goes to the next hold. It's reported as behaviour, not as a skill rating.
+   - **Technique repertoire:** high steps, flags (inside/outside), drop knees, frog, hand/foot matches, foot swaps, cross-throughs, catches, mantles, traverses, stems and laybacks, each with a confidence level, plus suggestions for the terrain you picked (slab, vertical, overhang, roof, arête, corner, crack).
+   - **Movement timeline:** every half second gets multiple labels (role, static/dynamic, visible contacts, each hand and foot, orientation, hip movement, arm and leg posture, balance, flag, movement family, hold direction, events, outcome, visibility). Anything a single camera can't show (grip type, hips-to-wall distance, whether a foot is weighted, crack jam type) is labelled *unknown* rather than guessed. Tap a moment to see its labels, and **export them as JSON**. Reviewed exports are the raw material for training a real model later.
    - **Move by move:** every hand move with ✓/✗ checks (feet first? straight arm? legs or arms? hips over feet? controlled arrival? hesitation? re-grip?). Tap to watch it.
    - **Start / middle / top:** how your technique changed as you got higher and more tired.
    - **Left vs right:** imbalances between your arms and legs.
@@ -39,6 +42,10 @@ Any free static host also works: Netlify, Cloudflare Pages, or Vercel. Just poin
 - **Left/right mix-ups:** pose models often swap left and right on small figures or climbers seen from behind. These swaps are detected and undone over time.
 - **Hidden legs:** legs are often partly hidden behind the body. Each frame is analysed twice (normal and mirrored) and the results are combined. Doubtful points are weighted down by a smoothing filter instead of being thrown away, hidden stretches are bridged using body proportions, and hold detection only trusts limbs while they're actually visible. In the replay, estimated parts of the skeleton are drawn faded and dashed.
 - **Small-figure safeguards:** more smoothing, jitter-aware hold detection, and fine-detail scores (grip and foot readjustments) are skipped when the climber's torso is under about 60 px.
+
+## Movement labelling framework
+
+The labels follow an observational framework for climbing video: short multi-label windows instead of one label per move; left/right, contact state and visibility kept for everything; transitions (reach, touch/probe, grip-set, weight-transfer, foot-set, foot-swap, cross-through, hand-match, release, catch, regrip, rest/shake) as separate events; and "unknown" instead of guessing anything a single camera can't show. The mechanics and terminology come from REI's climbing technique guide, *Role of route previewing strategies on climbing fluency and exploratory movements* (PLOS ONE, 2017), *Biomechanical Principles and Techniques: A Systematization for Sport Climbing* (MDPI Sports), and crack-climbing guides from the American Alpine Institute and The Mountaineers. **The detection thresholds are this app's own rules, not values validated by those studies**, and nothing here is a trained machine-learning model: it's rules applied to the pose data. The rules are tested against simulated climbs in `tests/`.
 
 ## What it measures
 
@@ -76,6 +83,8 @@ js/camera.js                 camera-movement estimation (pure, tested)
 js/outcome.js                finish/top-out/fall detection and fall cause analysis (pure, tested)
 js/falladvice.js             coaching for each fall cause
 js/fallview.js               animated skeleton replay of a fall
+js/labels.js                 multi-label movement timeline, PLOS ONE movement states, events, repertoire (pure, tested)
+js/timeline.js               movement timeline view + label export
 js/refine.js                 pose clean-up: left/right fixes, confidence-weighted smoothing, bone lengths (pure, tested)
 vendor/mediapipe/            MediaPipe Tasks Vision 1.0.1 JS + WASM (Apache 2.0)
 models/                      pose_landmarker lite / full / heavy models (Apache 2.0)

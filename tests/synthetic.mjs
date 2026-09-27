@@ -178,6 +178,52 @@ export function withEnding(frames, kind, { fps = 10 } = {}) {
       for (let i = 0; i < 1.5 * fps; i++) push(null);
       break;
     }
+    // ----- technique sequences (then the climber just hangs there) -----
+    case 'probe':
+      hold(1);
+      // Reach out sideways to feel a hold (a move a straight arm can actually make)...
+      move([16], 0.55 * T, 0.25 * T, 0.5);
+      move([14], 0.25 * T, 0.1 * T, 0.01);
+      hold(0.2);
+      // ...and come back without using it.
+      move([16], -0.55 * T, -0.25 * T, 0.5);
+      move([14], -0.25 * T, -0.1 * T, 0.01);
+      hold(2);
+      break;
+    case 'match':
+      hold(1);
+      move([15, 13], p[16][0] - p[15][0] - 0.05 * T, p[16][1] - p[15][1], 0.7);
+      hold(2);
+      break;
+    case 'crossThrough':
+      hold(1);
+      // Elbow travels with the hand (the arm stays a realistic length).
+      move([15, 13], p[16][0] - p[15][0] + 0.5 * T, p[16][1] - p[15][1] - 0.9 * T, 0.7);
+      hold(2);
+      break;
+    case 'flag': {
+      hold(1);
+      // Hips over the right foot, left leg straight out to the left.
+      const hipsTorso = [0, 11, 12, 13, 14, 23, 24];
+      move(hipsTorso, p[28][0] - (p[23][0] + p[24][0]) / 2, 0, 0.5);
+      const hip = p[23];
+      move([25], hip[0] - 0.6 * T - p[25][0], hip[1] + 0.3 * T - p[25][1], 0.4);
+      move([27, 29, 31], hip[0] - 1.3 * T - p[27][0], hip[1] + 0.6 * T - p[27][1], 0.4);
+      hold(2.5);
+      break;
+    }
+    case 'dropKnee': {
+      hold(1);
+      // Turn side-on (shoulders look narrow) and drop the left knee to foot level.
+      const mx = (p[11][0] + p[12][0]) / 2, hx = (p[23][0] + p[24][0]) / 2;
+      move([11], mx - p[11][0] - 0.04 * T, 0, 0.4);
+      move([12], mx - p[12][0] + 0.04 * T, 0, 0.4);
+      move([23], hx - p[23][0] - 0.03 * T, 0, 0.3);
+      move([24], hx - p[24][0] + 0.03 * T, 0, 0.3);
+      move([25], p[27][0] + 0.4 * T - p[25][0], p[27][1] + 0.05 * T - p[25][1], 0.5);
+      hold(2.5);
+      break;
+    }
     default: throw new Error(`unknown ending ${kind}`);
   }
   return out;
