@@ -1,7 +1,7 @@
 // Offline support. App files: network first (so updates arrive), cache as fallback.
 // The large model + WebAssembly files: cache first (they never change for a given version).
 
-const VERSION = 'v7';
+const VERSION = 'v8';
 const SHELL = `crux-shell-${VERSION}`;
 const HEAVY = `crux-heavy-${VERSION}`;
 const SHELL_FILES = [

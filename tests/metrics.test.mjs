@@ -349,3 +349,47 @@ test('a short lean (torso shorter on screen for a moment) is not treated as a si
   const r = analyze(frames);
   assert.equal(r.metrics.scaleCompensated, false);
 });
+
+// ---------- walking to/from the phone at the start and end of the video ----------
+
+// Grows the climber around a point moving toward the camera (bottom centre of the picture).
+// f = 0 is the climber's real position; f = 1 is right in front of the lens.
+function approach(pose, k, f) {
+  const hx = (pose[23][0] + pose[24][0]) / 2, hy = (pose[23][1] + pose[24][1]) / 2;
+  const cx = hx + (0.28 - hx) * f, cy = hy + (0.75 - hy) * f;
+  return pose.map(([x, y, v]) => [cx + (x - hx) * k, cy + (y - hy) * k, v]);
+}
+
+test('walking up to the phone to stop the recording is ignored', () => {
+  const climb = withEnding(makeClimb({ cycles: 6 }), 'lower');
+  const base = analyze(climb);
+  const last = climb[climb.length - 1];
+  const walk = [];
+  for (let i = 1; i <= 30; i++) {
+    const f = i / 30;
+    walk.push({ t: last.t + i / 10, p: approach(last.p, 1 + 2 * f, f) });
+  }
+  // ...and walking from the phone to the wall at the start.
+  const first = climb[0];
+  const lead = [];
+  for (let i = 0; i < 25; i++) {
+    const f = 1 - i / 25;
+    lead.push({ t: i / 10, p: approach(first.p, 1 + 1.8 * f, f) });
+  }
+  const shifted = climb.map((fr) => ({ ...fr, t: fr.t + 2.5 }));
+  const walkShifted = walk.map((fr) => ({ ...fr, t: fr.t + 2.5 }));
+  const r = analyze([...lead, ...shifted, ...walkShifted]);
+  assert.ok(r.metrics.trimmedEnd >= 1.5, `trimmed end ${r.metrics.trimmedEnd}`);
+  assert.ok(r.metrics.trimmedStart >= 1.2, `trimmed start ${r.metrics.trimmedStart}`);
+  assert.ok(!r.metrics.scaleCompensated, 'the walk should not be treated as a size change');
+  assert.ok(!r.warnings.some((w) => /zoom/i.test(w)));
+  assert.equal(r.metrics.handMoves, base.metrics.handMoves);
+  assert.equal(r.outcome.result, base.outcome.result);
+  assert.ok(!coach(r).notes.some((n) => /on screen by the end/.test(n)));
+});
+
+test('a normal video is not trimmed', () => {
+  const r = analyze(makeClimb({ cycles: 8 }));
+  assert.equal(r.metrics.trimmedStart, 0);
+  assert.equal(r.metrics.trimmedEnd, 0);
+});

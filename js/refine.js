@@ -109,6 +109,44 @@ export function fixLeftRight(frames) {
 }
 
 /**
+ * Cuts off walking to or from the phone. People start recording and walk to the wall, then
+ * walk back to stop it, so at the very start and end they look much bigger on screen than
+ * while climbing. Those stretches aren't climbing and would distort the measurements.
+ * Returns { frames, trimStart, trimEnd } (seconds removed at each end).
+ */
+export function trimCameraApproach(frames, { factor = 1.25, maxShare = 0.4 } = {}) {
+  const n = frames.length;
+  const size = frames.map((f) => {
+    const p = f.p;
+    if (!p || Math.min(p[11][2], p[12][2], p[23][2], p[24][2]) < 0.5) return NaN;
+    return dist(mid(p[11], p[12]), mid(p[23], p[24]));
+  });
+  const good = size.map((v, i) => [v, i]).filter(([v]) => isNum(v));
+  if (good.length < 10) return { frames, trimStart: 0, trimEnd: 0 };
+  // Typical climbing size: the middle half of the video.
+  const midVals = good.filter(([, i]) => i >= n * 0.25 && i <= n * 0.75).map(([v]) => v);
+  const ref = median(midVals.length >= 5 ? midVals : good.map(([v]) => v));
+  // Smooth a little so a single bad frame doesn't decide anything.
+  const sm = smoothArr(size, 5);
+  const big = (i) => isNum(sm[i]) && sm[i] > ref * factor;
+  const limit = Math.floor(n * maxShare);
+  // From the end: frames that are "big" (or lost, e.g. filled the frame / went past the
+  // camera) back to where the climber was last normal size.
+  let b = n - 1, sawBig = false;
+  while (b > 0 && n - 1 - b < limit && (big(b) || (!isNum(sm[b]) && sawBig) || (!isNum(sm[b]) && b > n - 1 - 3))) { if (big(b)) sawBig = true; b--; }
+  let end = sawBig ? b : n - 1;
+  let a = 0; sawBig = false;
+  while (a < n - 1 && a < limit && (big(a) || (!isNum(sm[a]) && sawBig))) { if (big(a)) sawBig = true; a++; }
+  const start = sawBig ? a : 0;
+  if (end - start < 10) return { frames, trimStart: 0, trimEnd: 0 };
+  return {
+    frames: frames.slice(start, end + 1),
+    trimStart: start ? frames[start].t - frames[0].t : 0,
+    trimEnd: end < n - 1 ? frames[n - 1].t - frames[end].t : 0,
+  };
+}
+
+/**
  * Confidence-weighted smoother for one coordinate series (random-walk Kalman filter with a
  * Rauch–Tung–Striebel backward pass). meas[i] may be NaN (not observed); conf[i] in 0..1.
  * q: expected movement per frame (std), r: measurement noise (std) of a fully confident point.

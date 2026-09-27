@@ -18,7 +18,7 @@ export const LM = {
 };
 
 // Bumped when the analysis changes; older saved sessions are re-analysed from their stored poses.
-export const ANALYSIS_VERSION = 6;
+export const ANALYSIS_VERSION = 7;
 
 // Landmarks kept when a session is stored (enough to redraw the skeleton).
 export const KEPT_LANDMARKS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -47,7 +47,7 @@ export const CFG = {
   turnedRatio: 0.65,
 };
 
-import { refinePoses, fixLeftRight } from './refine.js';
+import { refinePoses, fixLeftRight, trimCameraApproach } from './refine.js';
 import { detectDrops, lostWhileDropping, classifyOutcome } from './outcome.js';
 import { buildLabels } from './labels.js';
 
@@ -227,8 +227,10 @@ function countReadjust(moves, adjustments, windowSec = 2.5) {
 
 // ---------- main entry ----------
 
-export function analyze(frames, opts = {}) {
+export function analyze(allFrames, opts = {}) {
   const warnings = [];
+  // Ignore walking to the wall after pressing record, and back to the phone to stop it.
+  const { frames, trimStart, trimEnd } = trimCameraApproach(allFrames || []);
   const n = frames.length;
   if (n < 10) return { ok: false, reason: 'Video too short to analyse.' };
 
@@ -477,6 +479,8 @@ export function analyze(frames, opts = {}) {
     // How much bigger (>1) or smaller (<1) you looked at the end than at the start.
     scaleChange: scale?.ratio && isNum(scale.ratio) ? Math.round(scale.ratio * 100) / 100 : 1,
     scaleCompensated: !!scale?.applied,
+    trimmedStart: Math.round(trimStart * 10) / 10,
+    trimmedEnd: Math.round(trimEnd * 10) / 10,
   };
 
   // ----- detailed breakdown: every hand move, sections of the climb, left vs right -----
