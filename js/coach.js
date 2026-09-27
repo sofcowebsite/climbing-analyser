@@ -164,6 +164,197 @@ export const METRIC_DEFS = [
   },
 ];
 
+// Alternative cues and drills, used in turn when the same problem comes back on later
+// climbs, so a recurring issue gets a new angle instead of the same words. Drills go
+// roughly from simple to more demanding.
+const VARIANTS = {
+  feetFirstRatio: {
+    cues: [
+      'Look down before you look up: find the next foothold first, then the handhold it lets you reach.',
+      'Say "feet" in your head before every hand move. It sounds silly, but it breaks the reach-first habit quickly.',
+    ],
+    drills: [
+      'Drill: "Stepped reach". Before letting go with a hand, bring a foot up until you could reach the next hold with that arm still straight. If you can\'t, the foot isn\'t high enough yet.',
+      'Drill: "Feet only". Hold two good handholds on a vertical wall and move only your feet: up, across and back down to new footholds, 10 times per side, as part of your warm-up.',
+      'Drill: "Beat your count". On three warm-up routes, count your feet-first moves on the first one, then beat that number on the next two. Film the last one to check.',
+    ],
+  },
+  footHandRatio: {
+    cues: [
+      'Use intermediate footholds: small smears and edges between the big ones keep your feet close under you.',
+      'When your hands are high and your legs are straight, you\'re stretched out. That\'s the signal for a foot move, not another hand move.',
+    ],
+    drills: [
+      'Drill: "Knee-height steps". On an easy route, only use footholds at or below knee height relative to your current foot: lots of small steps instead of a few big ones.',
+      'Drill: "Glued hands". On a traverse, a hand may only move after both feet have moved.',
+    ],
+  },
+  footReadjustRate: {
+    cues: [
+      'Choose the exact spot on the foothold (the best edge or dimple) before your foot leaves the old one.',
+      'Slow the foot down for the last few centimetres, like putting a full glass down on a table.',
+    ],
+    drills: [
+      'Drill: "Stare and count". Keep your eyes on each foot until it\'s weighted, then count "one" before you look up.',
+      'Drill: "Target practice". Pick a chalk mark or the best part of each foothold and land your big toe exactly on it, first time.',
+      'Drill: "Redo rule". On an easy route, any foot that moves after being placed means down-climbing one move and doing it again.',
+    ],
+  },
+  straightArmRatio: {
+    cues: [
+      'Think "long arms, bent legs": when you\'re still, the bend should be in your knees, not your elbows.',
+      'Hang like a coat on a hook: shoulders engaged, elbows straight, hips sitting out from the wall.',
+    ],
+    drills: [
+      'Drill: "Two-second hang". On every hold of an easy route, pause for two seconds on a straight arm before moving. If you can\'t straighten it, move your feet until you can.',
+      'Drill: "Bend only to move". On an easy overhang, your arms may only bend while actually travelling between holds. Film it and check every still moment.',
+      'Drill: "Shoulder set". Hang a jug on one straight arm and pull the shoulder blade down without bending the elbow, 5 × 5 s per arm. That\'s the position to rest in.',
+    ],
+  },
+  legDrive: {
+    cues: [
+      'Before the reach, sink your hips slightly and push up from the foot, like getting out of a low chair.',
+      'Let your hand ride up on your legs\' push: it should arrive at the hold without your arm having to pull.',
+    ],
+    drills: [
+      'Drill: "Stand, then reach". Split every move in two: first stand up fully on the foothold and freeze, then reach.',
+      'Drill: "Open hands". On a slab or easy vertical wall, climb using open hands only (no crimping or pulling), so the lift has to come from your legs.',
+      'Drill: "One hand down". On easy vertical terrain, climb short sections with one hand behind your back. The legs have to lift you.',
+    ],
+  },
+  balanceOffset: {
+    cues: [
+      'Your belly button should be above the foot you\'re about to push from.',
+      'If a hand is working hard to hold you in, your hips are in the wrong place: move them instead of squeezing harder.',
+    ],
+    drills: [
+      'Drill: "Light hand". Before each reach, relax the grip of the hand that\'s about to move until you could let go. Shift your hips until you can.',
+      'Drill: "Flag everything". On an easy route, flag the free leg on every move where both feet are on the same side. It teaches you where your balance point is.',
+      'Drill: "Hip-shift traverse". Traverse slowly, moving your hips fully over one foot before moving the other foot or a hand.',
+    ],
+  },
+  turnedShare: {
+    cues: [
+      'On a long reach, turn the same-side hip in: reaching with the right hand means right hip toward the rock.',
+      'Try each hard move twice, once square and once turned, and keep whichever leaves your arm straighter.',
+    ],
+    drills: [
+      'Drill: "Back-step lap". On a steep wall, back-step (outside edge, hip in) on every move of an easy route.',
+      'Drill: "Drop-knee hunt". On an overhang, find three moves where a drop knee makes the reach easier, and repeat each one 3 times.',
+    ],
+  },
+  pathEfficiency: {
+    cues: [
+      'Before each move, picture where your hips need to end up, then move them there in one go.',
+      'Don\'t swing to build momentum. If you need it, one small pump of the hips is enough.',
+    ],
+    drills: [
+      'Drill: "Freeze". A partner calls "freeze" at random moments; you should always be in a position you could hold.',
+      'Drill: "Watch your hips". Film a route and watch only your hips. Mark every place they go down or sideways for no reason, and fix those spots on the next go.',
+    ],
+  },
+  controlledRatio: {
+    cues: [
+      'Grab softly first, then tighten. A soft landing is a controlled landing.',
+      'Keep your feet pushing through the reach, and don\'t let your hips drift off the wall as you grab.',
+    ],
+    drills: [
+      'Drill: "Touch, then take". Touch every new hold lightly for a moment before gripping it. You can only do that if you arrive in control.',
+      'Drill: "Stick it". After every hand move, freeze for 2 seconds with your feet still on. Any swing or foot cut means repeating the move.',
+    ],
+  },
+  jerkyPerMin: {
+    cues: [
+      'Move at a speed you could stop at any moment.',
+      'Breathe out as you make each move. It takes the lunge out of it.',
+    ],
+    drills: [
+      'Drill: "Slow motion". Climb an easy route taking about 5 seconds per move, completely smoothly.',
+      'Drill: "Quiet climbing". A partner listens: every thud, slap or scrape is a point against you. Aim for zero.',
+    ],
+  },
+  hesitationsPerMin: {
+    cues: [
+      'If you have to stop and think, do it on a good hold with a straight arm, never on a bad one.',
+      'Decide the next two moves before you leave a rest, not one move at a time.',
+    ],
+    drills: [
+      'Drill: "Beta out loud". Before climbing, tell a partner the full sequence, hands and feet. Afterwards, note where the real sequence was different.',
+      'Drill: "Count of three". On a new route below your limit, give yourself a count of three at each hold, then move, even if you\'re unsure.',
+    ],
+  },
+  handReadjustRate: {
+    cues: [
+      'Shape your hand for the hold (crimp, open hand, pinch) before it arrives.',
+      'Slow the hand for the last 5 cm so it lands exactly where you aimed.',
+    ],
+    drills: [
+      'Drill: "Look, then grab". Look at each hold for a second before you reach and decide the grip before your hand moves.',
+      'Drill: "First grip". Go round the gym grabbing different hold types from the ground, one try each: your first grip has to be your final grip.',
+    ],
+  },
+};
+for (const d of METRIC_DEFS) {
+  d.cues = [d.cue, ...(VARIANTS[d.key]?.cues || [])];
+  d.drills = [d.drill, ...(VARIANTS[d.key]?.drills || [])];
+}
+
+// Pick the k-th entry of a list, wrapping round.
+const pick = (pool, k) => pool[((k % pool.length) + pool.length) % pool.length];
+// Start a list from its k-th entry, so a different point comes first.
+const rotate = (arr, k) => (arr.length ? arr.map((_, i) => arr[(i + k) % arr.length]) : arr);
+const ordinal = (n) => ['first', 'second', 'third', 'fourth', 'fifth'][n - 1] || `${n}th`;
+
+// ---------- memory of earlier climbs ----------
+// Earlier reports let the coaching change from climb to climb: a recurring problem gets a
+// different cue and drill each time along with how it has trended, explanations the climber
+// has already read aren't repeated in full, and lasting strengths are only mentioned briefly.
+// Everything is counted from the stored reports, so reopening a climb shows the same text.
+function historyIndex(history) {
+  const prev = (history || [])
+    .filter((s) => s && s.report && Array.isArray(s.report.items))
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const inList = (s, list, key) => (s.report[list] || []).some((x) => x.key === key);
+  const count = (pred) => prev.reduce((c, s) => c + (pred(s.report) ? 1 : 0), 0);
+  const streak = (pred) => { let k = 0; for (let i = prev.length - 1; i >= 0 && pred(prev[i].report); i--) k++; return k; };
+  return {
+    n: prev.length,
+    last: prev.length ? prev[prev.length - 1].report : null,
+    count, streak,
+    flagged: (key) => prev.filter((s) => inList(s, 'improvements', key)).length,
+    flagStreak: (key) => streak((r) => (r.improvements || []).some((x) => x.key === key)),
+    strongStreak: (key) => streak((r) => (r.strengths || []).some((x) => x.key === key || (x.keys || []).includes(key))),
+    scores: (key, k) => prev.slice(-k).map((s) => s.report.items.find((i) => i.key === key)?.score),
+  };
+}
+const worstCategory = (cats) => Object.entries(cats || {}).filter(([, c]) => isNum(c?.score)).sort((a, b) => a[1].score - b[1].score)[0]?.[0] || null;
+
+// How a problem has gone over earlier climbs, in one sentence (or null on a first climb).
+// k counts notes already written for this report, so several recurring problems don't all
+// get the same sentence.
+function trendNote(it, H, k = 0) {
+  if (!H.n || !isNum(it.score)) return null;
+  const streak = H.flagStreak(it.key), times = H.flagged(it.key);
+  if (streak >= 1) {
+    const seq = H.scores(it.key, Math.min(streak, 4)).filter(isNum);
+    const before = seq.length ? seq.reduce((a, b) => a + b, 0) / seq.length : null;
+    const d = isNum(before) ? it.score - before : 0;
+    const when = streak === 1 ? 'on your last climb too' : `on each of your last ${streak} climbs`;
+    const path = seq.length ? ` (score ${[...seq, it.score].join(' → ')})` : '';
+    const verdict = d >= 8 ? pick(['It\'s improving, so what you\'re doing is working: keep going.', 'Heading the right way.', 'Better than before: keep the same focus.'], k)
+      : d <= -8 ? pick(['It\'s got worse, so give it priority.', 'This one slipped further, so put it first on your warm-ups.', 'Worse than before.'], k)
+        : pick([
+          'It hasn\'t moved much yet, so the cue and drill below are different from last time: a new angle on the same problem.',
+          'No real change yet, so there\'s a fresh drill below.',
+          'About the same as before. Try the new cue this time.',
+        ], k);
+    return `Flagged ${when}${path}. ${verdict}`;
+  }
+  if (times >= 1) return `This came back: it was fine on your last climb, but it's been flagged on ${times} of your ${H.n} earlier climbs. It slips when you're not thinking about it, so keep it on your warm-up checklist.`;
+  if (H.n >= 2) return `New this climb: it wasn't a problem on any of your ${H.n} earlier climbs, so it may be down to this route (or how you felt today) rather than a habit.`;
+  return null;
+}
+
 export const CATEGORIES = {
   footwork: { label: 'Footwork', blurb: 'How much your feet move, whether they lead your hands, and how precisely you place them.' },
   arms: { label: 'Arm efficiency', blurb: 'Hanging on straight arms and pushing with your legs.' },
@@ -268,18 +459,22 @@ function confidenceFor(it, m, nMoves) {
 
 // ---------- the full report ----------
 
-export function coach(result) {
+// history: earlier saved sessions ({ createdAt, report }), used to vary the coaching.
+export function coach(result, { history } = {}) {
   const m = result.metrics;
   const moves = result.moves || [];
+  const H = historyIndex(history);
   const items = [];
   for (const def of METRIC_DEFS) {
     const v = m[def.key];
     const s = isNum(v) ? def.score(v) : null;
     const flagged = MOVE_FLAGS[def.key] ? moves.filter(MOVE_FLAGS[def.key]).map((mv) => mv.n) : [];
+    // Each earlier climb that flagged this moves on to the next cue and drill.
+    const times = H.flagged(def.key);
     items.push({
       key: def.key, category: def.category, label: def.label, value: v,
       display: isNum(v) ? def.format(v) : '—', score: s, info: !!def.info,
-      what: def.what, why: def.why, cue: def.cue, drill: def.drill,
+      what: def.what, why: def.why, cue: pick(def.cues, times), drill: pick(def.drills, times), seenBefore: times,
       target: isNum(v) ? def.target(v) : null,
       text: isNum(v) ? ((isNum(s) ? s >= 60 : v >= 0.08) ? def.good(v, m) : def.bad(v, m)) : null,
       moves: flagged,
@@ -295,18 +490,50 @@ export function coach(result) {
   const overall = catScores.length ? Math.round(catScores.reduce((a, b) => a + b, 0) / catScores.length) : null;
 
   for (const it of items) it.confidence = isNum(it.value) ? confidenceFor(it, m, moves.length) : null;
+  let noted = 0;
+  for (const it of [...items].sort((a, b) => a.score - b.score)) {
+    if (it.info || !isNum(it.score) || it.score >= 50) continue;
+    it.history = trendNote(it, H, noted);
+    if (it.history) noted++;
+  }
 
+  const lastFlagged = (key) => (H.last?.improvements || []).some((x) => x.key === key);
+  const lastScore = (key) => H.last?.items?.find((i) => i.key === key)?.score;
   const strengths = [], improvements = [];
   for (const it of items) {
     if (!isNum(it.score)) continue;
-    if (it.score >= 70) strengths.push({ key: it.key, label: it.label, score: it.score, text: it.text, confidence: it.confidence });
-    else if (it.score < 50) {
+    if (it.score >= 70) {
+      // A fix is news; a strength seen on the last few climbs only needs a line.
+      const run = H.strongStreak(it.key);
+      let text = it.text, tag = null;
+      if (lastFlagged(it.key) && isNum(lastScore(it.key))) {
+        tag = 'fixed';
+        text = `Fixed since your last climb (score ${lastScore(it.key)} → ${it.score}). ${it.text}`;
+      } else if (run >= 2) tag = 'steady';
+      strengths.push({ key: it.key, label: it.label, score: it.score, text, tag, run, display: it.display, confidence: it.confidence });
+    } else if (it.score < 50) {
       const evidence = it.moves.length && moves.length ? ` Seen on ${plural(it.moves.length, 'move')}: ${list(it.moves)}.` : '';
       const hedge = it.confidence === 'low' ? 'Possibly: ' : '';
-      improvements.push({ key: it.key, label: it.label, score: it.score, text: hedge + it.text + evidence, drill: it.drill, cue: it.cue, why: it.why, target: it.target, moves: it.moves, confidence: it.confidence });
+      improvements.push({ key: it.key, label: it.label, score: it.score, text: hedge + it.text + evidence, drill: it.drill, cue: it.cue, why: it.why, target: it.target, moves: it.moves, confidence: it.confidence, history: it.history, seenBefore: it.seenBefore });
     }
   }
-  strengths.sort((a, b) => b.score - a.score);
+  // Fixed ones first, then the strongest; habits you've had for a while go last.
+  const tagOrder = { fixed: 0, null: 1, steady: 2 };
+  strengths.sort((a, b) => tagOrder[a.tag] - tagOrder[b.tag] || b.score - a.score);
+  // Strengths you've had on the last few climbs are habits: one line for all of them.
+  const steady = strengths.filter((x) => x.tag === 'steady');
+  if (steady.length) {
+    strengths.splice(strengths.indexOf(steady[0]), steady.length, {
+      key: 'habits', label: steady.length === 1 ? `${steady[0].label}: still a strength` : 'Still strengths', score: Math.min(...steady.map((x) => x.score)), tag: 'steady', keys: steady.map((x) => x.key),
+      text: (() => {
+        const sameRun = steady.every((x) => x.run === steady[0].run);
+        const names = steady.map((x) => `${x.label.toLowerCase()} (${x.display}${sameRun ? '' : `, ${x.run + 1} climbs running`})`);
+        const joined = (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0]).replace(/^./, (c) => c.toUpperCase());
+        const when = sameRun ? ` on each of your last ${steady[0].run + 1} climbs` : '';
+        return `${joined}: ${steady.length === 1 ? 'a strength' : 'all strengths'}${when}. ${steady.length === 1 ? 'It\'s' : 'These are'} habits now, so there's nothing to change.`;
+      })(),
+    });
+  }
   improvements.sort((a, b) => a.score - b.score);
 
   // Move-by-move review, with anything that happened on most moves pulled out as a pattern.
@@ -328,20 +555,29 @@ export function coach(result) {
 
   const sectionInsights = sectionAnalysis(result.sections || []);
   const sideInsights = sideAnalysis(result.sides, m);
-  const extraInsights = extraAnalysis(result, m);
+  const extraInsights = extraAnalysis(result, m, H);
 
   // How it ended, and a breakdown of every fall.
   const outcome = result.outcome || null;
-  const fallAnalyses = (result.falls || []).map((f, k) => describeFall(f, k, result));
+  const fallAnalyses = [];
+  for (const [k, f] of (result.falls || []).entries()) fallAnalyses.push(describeFall(f, k, result, H, fallAnalyses));
 
   // Other observations (not scored).
   const notes = [];
   if (m.rests > 0) {
     notes.push(m.restStraightArm > 0
       ? `You took ${plural(m.rests, 'proper rest')} (4 s or longer), ${m.restStraightArm} of them on straight arms.`
-      : `You took ${plural(m.rests, 'rest')} of 4 s or longer, but with bent arms, which recovers much less. Straighten the arm, sink the hips and alternate hands every few seconds.`);
+      : `You took ${plural(m.rests, 'rest')} of 4 s or longer, but with bent arms, which recovers much less. ${pick([
+        'Straighten the arm, sink the hips and alternate hands every few seconds.',
+        'A rest only works on a straight arm: move your feet until the holding arm can hang long, then swap hands every 5–10 s.',
+        'If you can\'t straighten the arm where you stopped, that spot isn\'t a rest. Look for a bigger hold or a better foot before stopping.',
+      ], H.n)}`);
   } else if (m.climbTime > 60) {
-    notes.push(`You climbed for ${Math.round(m.climbTime)} s without a proper rest. Plan a shake-out on the best hold before the hardest section.`);
+    notes.push(`You climbed for ${Math.round(m.climbTime)} s without a proper rest. ${pick([
+      'Plan a shake-out on the best hold before the hardest section.',
+      'Before your next go, pick one hold from the ground where you\'ll stop and shake out.',
+      'Even 5 seconds per hand on a good hold before the crux makes a difference.',
+    ], H.n)}`);
   }
   const turn = items.find((i) => i.key === 'turnedShare');
   if (turn && isNum(turn.value)) notes.push(turn.value >= 0.08 ? turn.text : `${turn.text} ${turn.cue}`);
@@ -351,7 +587,7 @@ export function coach(result) {
     notes.push(`You looked about ${pc}% ${m.scaleChange < 1 ? 'smaller' : 'bigger'} on screen by the end of the climb, which is normal when you climb ${m.scaleChange < 1 ? 'away from' : 'toward'} the camera. All measurements were rescaled to your body size, so they're not affected.`);
   }
 
-  const actionPlan = buildActionPlan(improvements, sectionInsights, sideInsights, extraInsights, fallAnalyses);
+  const actionPlan = buildActionPlan(improvements, sectionInsights, sideInsights, extraInsights, fallAnalyses, H);
   actionPlan.forEach((p, k) => { const it = items.find((i) => i.key === p.key); if (it) it.inPlan = k + 1; });
 
   // Summary: how it ended first, then the single most useful thing to know.
@@ -368,16 +604,51 @@ export function coach(result) {
       if (f.primary && f.primary.key !== 'unclear') parts.push(`Most likely cause: ${f.primary.title.toLowerCase()}.`);
     }
   }
+  const sinceLast = changesSinceLast(items, categories, overall, H);
   if (bestCat && worstCat && bestCat[0] !== worstCat[0]) {
-    parts.push(`Technique ${overall}/100: strongest in ${bestCat[1].label.toLowerCase()}, weakest in ${worstCat[1].label.toLowerCase()}.`);
+    const run = H.streak((r) => worstCategory(r.categories) === worstCat[0]);
+    const again = run >= 1 ? ` again (${run + 1} climbs running)` : '';
+    parts.push(`Technique ${overall}/100: strongest in ${bestCat[1].label.toLowerCase()}, weakest in ${worstCat[1].label.toLowerCase()}${again}.`);
   } else if (bestCat) parts.push(`Technique ${overall}/100.`);
+  if (sinceLast.headline) parts.push(sinceLast.headline);
   if (m.trackQuality === 'low') parts.push('Tracking quality was low, so treat these results as rough.');
   const summary = parts.join(' ') || 'Not enough of your body was tracked to score this climb.';
 
   const reliability = reliabilityCheck(m, moves.length, result);
-  const movement = movementAnalysis(result.labels);
+  const movement = movementAnalysis(result.labels, H);
 
-  return { overall, categories, items, strengths, improvements, notes, summary, actionPlan, moveReview, movePatterns: movePatternsList, moveSummary, sectionInsights, sideInsights, extraInsights, outcome, fallAnalyses, reliability, movement };
+  return { overall, categories, items, strengths, improvements, notes, summary, actionPlan, moveReview, movePatterns: movePatternsList, moveSummary, sectionInsights, sideInsights, extraInsights, outcome, fallAnalyses, reliability, movement, sinceLast: sinceLast.list };
+}
+
+// What changed since the previous climb: fixes, new problems and big moves in each area.
+function changesSinceLast(items, categories, overall, H) {
+  const L = H.last;
+  if (!L) return { list: [], headline: null };
+  const list = [];
+  const wasFlagged = (key) => (L.improvements || []).some((x) => x.key === key);
+  for (const it of items) {
+    const before = L.items?.find((i) => i.key === it.key)?.score;
+    if (it.info || !isNum(it.score) || !isNum(before)) continue;
+    if (wasFlagged(it.key) && it.score >= 60) list.push({ kind: 'fixed', key: it.key, d: it.score - before, text: `${it.label}: fixed (${before} → ${it.score}).` });
+    else if (!wasFlagged(it.key) && before >= 60 && it.score < 50) list.push({ kind: 'slipped', key: it.key, d: it.score - before, text: `${it.label}: slipped (${before} → ${it.score}).` });
+  }
+  for (const [key, c] of Object.entries(categories)) {
+    const before = L.categories?.[key]?.score;
+    if (!isNum(c.score) || !isNum(before) || Math.abs(c.score - before) < 8) continue;
+    const d = c.score - before;
+    list.push({ kind: d > 0 ? 'up' : 'down', key, d, text: `${c.label} ${d > 0 ? 'up' : 'down'} ${Math.abs(d)} points (${before} → ${c.score}).` });
+  }
+  const fixed = list.filter((x) => x.kind === 'fixed');
+  const up = list.filter((x) => x.kind === 'up').sort((a, b) => b.d - a.d)[0];
+  const down = list.filter((x) => x.kind === 'down').sort((a, b) => a.d - b.d)[0];
+  let headline = null;
+  const lbl = (x) => (categories[x.key]?.label || '').toLowerCase();
+  if (fixed.length) headline = `Since your last climb, ${fixed.map((x) => items.find((i) => i.key === x.key).label.toLowerCase()).join(' and ')} ${fixed.length > 1 ? 'are' : 'is'} no longer a problem.`;
+  else if (up && down) headline = `Compared with your last climb, ${lbl(up)} went up ${up.d} points but ${lbl(down)} dropped ${-down.d}.`;
+  else if (up) headline = `Compared with your last climb, ${lbl(up)} went up ${up.d} points.`;
+  else if (down) headline = `Compared with your last climb, ${lbl(down)} dropped ${-down.d} points.`;
+  else if (isNum(overall) && isNum(L.overall)) headline = Math.abs(overall - L.overall) <= 3 ? 'Very similar to your last climb overall.' : null;
+  return { list, headline };
 }
 
 // ---------- how you moved (movement states) and technique repertoire ----------
@@ -401,44 +672,59 @@ const TERRAIN_TIPS = {
   crack: { want: [], tips: ['Jams can\'t be seen well enough from one camera to judge. The analysis treats your crack moves generically, so check jam technique on the replay.'] },
 };
 
-function movementAnalysis(labels) {
+function movementAnalysis(labels, H) {
   if (!labels) return null;
   const f = labels.fluency, rep = labels.repertoire;
   const insights = [];
+  // Advice for an insight seen on earlier climbs moves on to the next wording.
+  const seen = (kind) => H.count((r) => (r.movement?.insights || []).some((x) => x.kind === kind));
   const pc = (v) => `${Math.round((v || 0) * 100)}%`;
   if (f.handProbes >= 2 || (f.share.hold_exploration || 0) >= 0.15) {
     insights.push({
-      title: 'A lot of exploring',
+      kind: 'exploring', title: 'A lot of exploring',
       text: `You touched ${plural(f.handProbes, 'hold')} with a hand and let go again without using ${f.handProbes === 1 ? 'it' : 'them'}${f.footProbes ? `, and tested ${plural(f.footProbes, 'foothold')}` : ''}. ${pc(f.share.hold_exploration)} of your time was exploring, against ${pc(f.share.hold_change)} actually moving between holds.`,
-      advice: 'That\'s normal when you don\'t know a route yet. A route-previewing study (PLOS ONE, 2017) linked reading the route beforehand with fewer and shorter stops. Before you start, name each hold you\'ll use, in order, and which hand takes it.',
+      advice: pick([
+        'That\'s normal when you don\'t know a route yet. A route-previewing study (PLOS ONE, 2017) linked reading the route beforehand with fewer and shorter stops. Before you start, name each hold you\'ll use, in order, and which hand takes it.',
+        'Probing is information-gathering done on your arms. Do more of it from the ground: look at each hold\'s shape and angle and decide how you\'ll grip it before you leave the floor.',
+        'If you have to test a hold, test it from a straight arm and commit quickly to your first choice. Most probes on this climb ended back on the hold you started from.',
+      ], seen('exploring')),
     });
   }
   if (f.stops >= 3) {
     insights.push({
-      title: `${f.stops} stops`,
+      kind: 'stops', title: `${f.stops} stops`,
       text: `You came to a complete stop ${f.stops} times (1 s or longer, ${f1(f.stopAvg)} s on average, ${f1(f.stopTotal)} s in total).`,
-      advice: 'Some stops are planned rests, which is fine. The costly ones are mid-sequence stops on poor holds. Compare them with the rests in the timeline below, and plan where you\'ll stop before you start.',
+      advice: pick([
+        'Some stops are planned rests, which is fine. The costly ones are mid-sequence stops on poor holds. Compare them with the rests in the timeline below, and plan where you\'ll stop before you start.',
+        'Check each stop in the timeline: was it on a good hold with a straight arm? If not, it cost strength without giving any back. Move those stops to the nearest good hold.',
+      ], seen('stops')),
     });
   }
   if ((f.share.postural_regulation || 0) >= 0.2) {
     insights.push({
-      title: 'Lots of body adjusting',
+      kind: 'adjusting', title: 'Lots of body adjusting',
       text: `${pc(f.share.postural_regulation)} of your time was spent shifting your body while all four limbs stayed put.`,
-      advice: 'This is usually searching for balance before a move. Set your hip position deliberately (over the foot you\'ll push from) and then commit, rather than shuffling until it feels right.',
+      advice: pick([
+        'This is usually searching for balance before a move. Set your hip position deliberately (over the foot you\'ll push from) and then commit, rather than shuffling until it feels right.',
+        'Try deciding the body position during the previous move, so you arrive already set up. Adjusting after arriving is time spent gripping.',
+      ], seen('adjusting')),
     });
   }
   if (f.upMoves >= 3 && f.controlledMoves / f.upMoves < 0.6) {
     insights.push({
-      title: 'Reaching without the body following',
+      kind: 'reaching', title: 'Reaching without the body following',
       text: `On ${f.upMoves - f.controlledMoves} of ${f.upMoves} upward hand moves your body didn't rise along with the move. The hand went up, but your centre of mass stayed where it was.`,
-      advice: 'In a controlled move the body rises from the legs as the hand travels (the IFSC definition of a controlled move is exactly this: centre of mass rising while the hand moves to the next hold). Start each move by driving the hips up, and let the hand arrive at the top of that motion.',
+      advice: pick([
+        'In a controlled move the body rises from the legs as the hand travels (the IFSC definition of a controlled move is exactly this: centre of mass rising while the hand moves to the next hold). Start each move by driving the hips up, and let the hand arrive at the top of that motion.',
+        'Reaching from a stationary body means the arm has to span the whole gap. Start the push from your feet a split second before the hand leaves, and the hold comes to you.',
+      ], seen('reaching')),
     });
   }
-  if (!insights.length) insights.push({ title: 'Efficient movement pattern', text: `Most of your time went into moving between holds (${pc(f.share.hold_change)}) and pulling/pushing up (${pc(f.share.hold_traction)}), with little exploring and few stops.`, advice: '' });
+  if (!insights.length) insights.push({ kind: 'efficient', title: 'Efficient movement pattern', text: `Most of your time went into moving between holds (${pc(f.share.hold_change)}) and pulling/pushing up (${pc(f.share.hold_traction)}), with little exploring and few stops.`, advice: '' });
 
   // Repertoire: what was seen (with how sure), and what might help on this terrain.
-  const seen = [];
-  const addSeen = (n, label, conf) => { if (n > 0) seen.push({ label, n, conf }); };
+  const seenMoves = [];
+  const addSeen = (n, label, conf) => { if (n > 0) seenMoves.push({ label, n, conf }); };
   addSeen(rep.highSteps, 'High steps', 'medium');
   addSeen(rep.flags, `Flags${rep.flagKinds.length ? ` (${rep.flagKinds.map((k) => k.replace(/_/g, ' ')).join(', ')})` : ''}`, 'low');
   addSeen(rep.dropKnees ? Math.max(1, Math.round(rep.dropKnees / 2)) : 0, 'Drop knees', 'low');
@@ -459,12 +745,13 @@ function movementAnalysis(labels) {
       const have = w === 'stems' ? (rep.families?.stemming || 0) : rep[w];
       if (!have) suggestions.push({ highSteps: 'No high steps seen: look for high footholds to rock over before long reaches.', flags: 'No flags seen: when both feet are on one side, flag the other leg to stop the swing.', dropKnees: 'No drop knees seen: on steep ground a drop knee often turns a hard pull into a reach.', stems: 'No stemming seen: in a corner, bridging between the walls can take the weight off your arms.' }[w]);
     }
-    suggestions.push(...tt.tips);
-  } else {
+    // Lead with a different terrain tip each climb on the same terrain.
+    suggestions.push(...rotate(tt.tips, H.count((r) => r.movement?.terrain === terrain)));
+  } else if (H.count((r) => (r.movement?.suggestions || []).some((x) => x.startsWith('Set the terrain'))) < 2) {
     suggestions.push('Set the terrain (slab, vertical, overhang, …) when you analyse a climb to get advice specific to the rock angle.');
   }
   return {
-    share: f.share, fluency: f, insights, seen, suggestions, terrain,
+    share: f.share, fluency: f, insights, seen: seenMoves, suggestions, terrain,
     caveat: 'These are observations of what your body did, not a measure of skill. Movement labels come from body-position rules on a single camera view, and each carries a confidence level.',
   };
 }
@@ -473,10 +760,26 @@ function movementAnalysis(labels) {
 
 const fmtClock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 
-function describeFall(f, k, result) {
+function describeFall(f, k, result, H, earlier = []) {
   const causes = f.causes.map((c) => ({ ...c, ...(FALL_CAUSES[c.key] || FALL_CAUSES.unclear) }));
   // Lead with the most solid explanation; keep weaker ones as "also possible".
   const primary = causes[0] || null;
+  // The same cause on earlier climbs (or earlier in this one) is a pattern: say so, lead with
+  // a different fix and give a different drill, rather than the same card again.
+  let pattern = null;
+  if (primary && primary.key !== 'unclear') {
+    const before = H.count((r) => (r.fallAnalyses || []).some((x) => x.primary?.key === primary.key));
+    const here = earlier.filter((x) => x.primary?.key === primary.key);
+    const turn = before + here.length;
+    if (turn) {
+      primary.fixes = rotate(primary.fixes, turn);
+      primary.drill = pick([primary.drill, ...(primary.moreDrills || [])], turn);
+      // The short cue has been given already: focus on the fix that now leads the list.
+      primary.cue = primary.fixes[0];
+    }
+    if (here.length) primary.why = `Same mechanism as Fall ${here[0].n} above.`;
+    if (before) pattern = `This is the ${ordinal(before + 1)} climb where you've come off this way, so it's a pattern rather than bad luck. The fixes below start from a different one and the drill has changed, so work on the first fix specifically.`;
+  }
   const secondary = causes.slice(1).filter((c) => c.key !== 'unclear');
   const where = f.move ? ` on move #${f.move.n} (${f.move.side} hand)` : '';
   const stickTxt = f.stick === null || f.stick === undefined ? '.' : f.stick < 0.1 ? ', the instant your hand reached the hold.' : `, ${f1(f.stick)} s after your hand reached the hold.`;
@@ -488,12 +791,16 @@ function describeFall(f, k, result) {
   const sec = secondary.find((c) => c.confidence !== 'low');
   if (sec) next.push(`Then add: ${sec.cue}`);
   if (causes.some((c) => c.key === 'pump' || c.key === 'stalled') && !['pump', 'stalled'].includes(primary?.key)) next.push('Before this section, rest on the last good hold (straight arm, alternate hands) so you arrive fresh.');
-  next.push('Once the move goes on its own, link it from the start. Keep it to 3–4 tries, then rest 5 minutes or more: tired attempts rehearse bad habits.');
+  next.push(pick([
+    'Once the move goes on its own, link it from the start. Keep it to 3–4 tries, then rest 5 minutes or more: tired attempts rehearse bad habits.',
+    'When it goes in isolation, add one move before it, then two, until you can link it from the start. Rest properly between goes: quality attempts beat quantity.',
+    'Stop working it once your attempts get worse rather than better. Come back fresh: moves you\'ve rehearsed often go first try on another day.',
+  ], H.n + k));
   return {
     n: k + 1, t: f.t, clock: fmtClock(f.t), drop: f.drop, move: f.move, stick: f.stick, lost: f.lost,
     headline: `Fall ${k + 1} at ${fmtClock(f.t)}${where}`,
     detail: `You dropped about ${metres(f.drop)}${stickTxt}`,
-    primary, secondary, nextAttempt: next, replay: f.replay,
+    primary, secondary, nextAttempt: next, replay: f.replay, pattern,
   };
 }
 
@@ -588,35 +895,73 @@ function sideAnalysis(sides, m) {
 
 // ---------- extra observations ----------
 
-function extraAnalysis(result, m) {
+function extraAnalysis(result, m, H) {
   const out = [];
   const moves = result.moves || [];
   const ex = result.extras || {};
+  // How many earlier climbs showed the same observation: each one moves the advice on.
+  const n = (title) => H.count((r) => (r.extraInsights || []).some((x) => x.title === title));
   if (m.feetCuts > 0) {
     const cutMoves = moves.filter((x) => x.cut).map((x) => x.n);
     out.push({
       kind: 'feetCuts', title: 'Feet cutting loose', priority: 50 + m.feetCuts * 5,
       text: `Your feet came off the rock ${plural(m.feetCuts, 'time')}${cutMoves.length ? ` (on move ${list(cutMoves)})` : ''}. Every cut means a swing you have to hold with your arms.`,
-      advice: 'Keep your core tight and actively pull your toes toward you on the footholds, especially on steep rock and long reaches.',
-      drill: 'Drill: "Toe hooks and toe pulls". On an overhang, practise moves while consciously pulling with your toes. If your feet cut, repeat the move.',
+      advice: pick([
+        'Keep your core tight and actively pull your toes toward you on the footholds, especially on steep rock and long reaches.',
+        'Feet usually cut when the hips swing away from the wall during a reach. Keep the hips close and the heels slightly raised so the toes can press in.',
+        'Pick footholds for the direction you\'re moving: when reaching right, load a foot that pushes left, so it opposes the swing.',
+      ], n('Feet cutting loose')),
+      drill: pick([
+        'Drill: "Toe hooks and toe pulls". On an overhang, practise moves while consciously pulling with your toes. If your feet cut, repeat the move.',
+        'Drill: "Feet stay on". On a steep boulder below your limit, any foot coming off means starting again. Do it until you get three clean runs.',
+      ], n('Feet cutting loose')),
     });
   }
   if (m.highSteps > 0) {
-    out.push({ kind: 'highSteps', title: 'High steps', text: `You used ${plural(m.highSteps, 'high step')}. High feet let you push up instead of pulling. Nice.`, advice: 'Keep looking for them, especially before long reaches.' });
+    out.push({ kind: 'highSteps', title: 'High steps', text: `You used ${plural(m.highSteps, 'high step')}. High feet let you push up instead of pulling. Nice.`, advice: pick([
+      'Keep looking for them, especially before long reaches.',
+      'To get more out of them, sink your hips toward the heel of the high foot before you stand up, so the leg does the lifting.',
+      'Next step: use them on your less-used leg too. Check the left vs right section to see which leg you favour.',
+    ], n('High steps')) });
   } else if (moves.length >= 5) {
-    out.push({ kind: 'highSteps', title: 'No high steps', text: 'You didn\'t use any high steps (a foot brought up to around hip height).', advice: 'On vertical rock, bringing a foot high and rocking over it is often easier than pulling. Look for a high foothold before each long reach.' });
+    out.push({ kind: 'highSteps', title: 'No high steps', text: 'You didn\'t use any high steps (a foot brought up to around hip height).', advice: pick([
+      'On vertical rock, bringing a foot high and rocking over it is often easier than pulling. Look for a high foothold before each long reach.',
+      'Before every move longer than your arm, check for a foothold at knee-to-hip height that you could rock onto.',
+      'Hip mobility limits high steps. A couple of minutes of deep squats and frog stretches before climbing makes them much easier.',
+    ], n('No high steps')) });
   }
   if (m.shakeOuts > 0) {
-    out.push({ kind: 'shakeOuts', title: 'Shake-outs and chalking', text: `You dropped a hand to shake out or chalk ${plural(m.shakeOuts, 'time')}.`, advice: 'Do it on good holds with a straight arm, and shake out each hand for a few seconds, not just a quick dip.' });
+    out.push({ kind: 'shakeOuts', title: 'Shake-outs and chalking', text: `You dropped a hand to shake out or chalk ${plural(m.shakeOuts, 'time')}.`, advice: pick([
+      'Do it on good holds with a straight arm, and shake out each hand for a few seconds, not just a quick dip.',
+      'Let the resting arm hang below your heart for 5–10 s and swap hands a few times. One quick dip barely helps.',
+      'Use the moment to read the next moves: look ahead while you shake, so you leave the rest knowing the sequence.',
+    ], n('Shake-outs and chalking')) });
   } else if (m.climbTime > 45) {
-    out.push({ kind: 'shakeOuts', title: 'No shake-outs', text: `You never dropped a hand to shake out or chalk during ${Math.round(m.climbTime)} s of climbing.`, advice: 'On longer climbs, shake out on the good holds before you get pumped, not after.' });
+    out.push({ kind: 'shakeOuts', title: 'No shake-outs', text: `You never dropped a hand to shake out or chalk during ${Math.round(m.climbTime)} s of climbing.`, advice: pick([
+      'On longer climbs, shake out on the good holds before you get pumped, not after.',
+      'Pick your shake-out holds from the ground, just like you pick your moves.',
+      'Practise shaking out on easy routes, even when you don\'t need to, so it becomes automatic when you do.',
+    ], n('No shake-outs')) });
   }
   if (isNum(m.stanceWidth)) {
-    if (m.stanceWidth < 0.35) out.push({ kind: 'stance', title: 'Narrow stance', text: `Your feet were usually close together (${f1(m.stanceWidth)} torso lengths apart).`, advice: 'A slightly wider stance gives you a more stable base and makes it easier to shift your hips over either foot.' });
-    else if (m.stanceWidth > 1.3) out.push({ kind: 'stance', title: 'Very wide stance', text: `Your feet were often very far apart (${f1(m.stanceWidth)} torso lengths).`, advice: 'Wide stems are great for resting in corners, but on a face they make it hard to move. Bring your feet under you more.' });
+    if (m.stanceWidth < 0.35) out.push({ kind: 'stance', title: 'Narrow stance', text: `Your feet were usually close together (${f1(m.stanceWidth)} torso lengths apart).`, advice: pick([
+      'A slightly wider stance gives you a more stable base and makes it easier to shift your hips over either foot.',
+      'With your feet together, any reach to the side swings you. Put one foot out wide in the direction you\'re reaching.',
+    ], n('Narrow stance')) });
+    else if (m.stanceWidth > 1.3) out.push({ kind: 'stance', title: 'Very wide stance', text: `Your feet were often very far apart (${f1(m.stanceWidth)} torso lengths).`, advice: pick([
+      'Wide stems are great for resting in corners, but on a face they make it hard to move. Bring your feet under you more.',
+      'From a wide stance your hips can\'t get over either foot. Bring one foot in toward your centre before moving up.',
+    ], n('Very wide stance')) });
   }
   if (isNum(m.avgSetup) && moves.length >= 3) {
-    out.push({ kind: 'pace', title: 'Pace', text: `You averaged ${f1(m.avgSetup)} s between arriving at one hold and leaving for the next, and made ${f1(m.movesPerMin || 0)} hand moves per minute.`, advice: m.avgSetup > 3 ? 'That\'s quite slow. Unless you\'re resting, aim to keep moving: time on the wall costs grip even when you\'re standing still.' : 'That\'s a good, steady pace.' });
+    const slow = m.avgSetup > 3;
+    out.push({ kind: 'pace', title: 'Pace', text: `You averaged ${f1(m.avgSetup)} s between arriving at one hold and leaving for the next, and made ${f1(m.movesPerMin || 0)} hand moves per minute.`, advice: slow ? pick([
+      'That\'s quite slow. Unless you\'re resting, aim to keep moving: time on the wall costs grip even when you\'re standing still.',
+      'Slow is fine on good holds, costly on bad ones. Try to move quickly through the poor holds and slow down only on the good ones.',
+    ], H.count((r) => (r.extraInsights || []).some((x) => x.kind === 'pace' && /slow/i.test(x.advice || '')))) : pick([
+      'That\'s a good, steady pace.',
+      'Steady pace again: you\'re not wasting time on holds.',
+    ], n('Pace')) });
   }
   return out;
 }
@@ -625,14 +970,15 @@ function extraAnalysis(result, m) {
 
 const PRIORITY_WEIGHT = { footwork: 1.1, arms: 1.05, body: 1, flow: 0.95 };
 
-function buildActionPlan(improvements, sectionInsights, sideInsights, extraInsights, fallAnalyses = []) {
+function buildActionPlan(improvements, sectionInsights, sideInsights, extraInsights, fallAnalyses = [], H = historyIndex([])) {
   // Low-confidence findings stay out of the plan unless there's nothing better.
   const solid = improvements.filter((i) => i.confidence !== 'low');
   const pool = solid.length ? solid : improvements;
   const cands = pool.map((i) => ({
     // Core technique (feet, arms) comes before flow when problems are equally bad.
     key: i.key, title: i.label, confidence: i.confidence, priority: (100 - i.score) * (PRIORITY_WEIGHT[METRIC_DEFS.find((d) => d.key === i.key)?.category] || 1),
-    saw: i.text, why: i.why, doThis: i.cue, drill: i.drill, target: i.target, moves: i.moves,
+    // Why it matters has been explained on at least two earlier climbs: the trend replaces it.
+    saw: i.text, why: i.seenBefore >= 2 && i.history ? null : i.why, history: i.history, doThis: i.cue, drill: i.drill, target: i.target, moves: i.moves,
   }));
   // What made you fall comes first when we're reasonably sure about it.
   const lastFall = fallAnalyses[fallAnalyses.length - 1];
@@ -647,9 +993,14 @@ function buildActionPlan(improvements, sectionInsights, sideInsights, extraInsig
     });
   }
   const fade = sectionInsights.find((x) => x.kind === 'fatigue');
-  if (fade) cands.push({ title: 'Staying efficient when tired', priority: 55, saw: fade.text, why: 'Most falls happen in the last third of a route, when technique slips under fatigue.', doThis: fade.advice, drill: 'Drill: "Pump laps". Climb an easy route 3 times in a row without resting, focusing on perfect straight arms and footwork on the last lap.', target: 'Keep straight arms and feet-first at the same level in the top third as at the start.' });
+  const inPlan = (title) => H.count((r) => (r.actionPlan || []).some((p) => p.title === title));
+  if (fade) cands.push({ title: 'Staying efficient when tired', priority: 55, saw: fade.text, why: 'Most falls happen in the last third of a route, when technique slips under fatigue.', doThis: fade.advice, drill: pick([
+    'Drill: "Pump laps". Climb an easy route 3 times in a row without resting, focusing on perfect straight arms and footwork on the last lap.',
+    'Drill: "Tired technique". At the end of a session, climb two easy routes while focusing on one thing only (straight arms or feet first). That\'s when the habit counts.',
+    'Drill: "4×4s". Four easy boulders back-to-back, four rounds, with 3 minutes between rounds. Keep the footwork clean even on the last one.',
+  ], inPlan('Staying efficient when tired')), target: 'Keep straight arms and feet-first at the same level in the top third as at the start.' });
   const cuts = extraInsights.find((x) => x.kind === 'feetCuts');
-  if (cuts) cands.push({ title: 'Keeping your feet on', priority: cuts.priority, saw: cuts.text, why: 'Feet cutting loose throws all your weight onto your fingers at once. It\'s one of the most common reasons to fall off a hold you actually reached.', doThis: cuts.advice, drill: cuts.drill, target: 'No feet cutting loose on routes at or below your level.' });
+  if (cuts) cands.push({ title: 'Keeping your feet on', priority: cuts.priority, saw: cuts.text, why: inPlan('Keeping your feet on') >= 2 ? null : 'Feet cutting loose throws all your weight onto your fingers at once. It\'s one of the most common reasons to fall off a hold you actually reached.', doThis: cuts.advice, drill: cuts.drill, target: 'No feet cutting loose on routes at or below your level.' });
   const side = sideInsights.find((x) => x.advice && /did most of the work|locked off/.test(x.title));
   if (side) cands.push({ title: side.title, priority: 35, saw: side.text, why: 'Imbalances mean one side tires first, and they often hide easier sequences on the other side.', doThis: side.advice, drill: '', target: 'Closer to an even split between left and right.' });
   // "Feet first" and "feet per hand move" say the same thing; keep the more actionable

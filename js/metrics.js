@@ -18,7 +18,7 @@ export const LM = {
 };
 
 // Bumped when the analysis changes; older saved sessions are re-analysed from their stored poses.
-export const ANALYSIS_VERSION = 7;
+export const ANALYSIS_VERSION = 8;
 
 // Landmarks kept when a session is stored (enough to redraw the skeleton).
 export const KEPT_LANDMARKS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];

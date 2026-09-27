@@ -30,6 +30,7 @@ Any free static host also works: Netlify, Cloudflare Pages, or Vercel. Just poin
    - **Left vs right:** imbalances between your arms and legs.
    - **How sure are we?** Every finding carries a confidence level based on tracking quality, how visible the relevant limb was and how much evidence there is. Uncertain findings are worded as "possibly" and kept out of the plan. Issues seen on most moves are reported once as a pattern instead of on every move.
    - **Detailed breakdown per area**, extra observations (feet cutting loose, high steps, shake-outs, stance, pace), and a **comparison with your previous climbs**.
+   - **Coaching that follows up instead of repeating itself.** Each climb is coached with your earlier climbs in mind: a problem that keeps coming back shows how its score has moved and gets a different cue and drill each time, explanations you've already read twice are left out, strengths you've kept for several climbs are summed up in one line, fixes since your last climb are called out, and falling the same way again is flagged as a pattern with a different lead fix and drill.
    - Height-over-time chart, key moments, and a video replay with a skeleton overlay.
 4. **History / Progress:** every climb is saved on the device. Progress shows score trends, send rate, hardest send, and your recurring weak spots.
 5. **Guide:** set your height (for metre estimates), switch analysis quality, and export or import backups.

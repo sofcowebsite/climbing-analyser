@@ -233,7 +233,8 @@ async function runAnalysis() {
     window.__crux.lastRun = out; // for debugging and automated tests
     const analysis = analyze(out.frames, { frameHeightPx: out.height, terrain: details.terrain });
     if (!analysis.ok) throw new Error(analysis.reason);
-    const report = coach(analysis);
+    // Earlier climbs let the coaching follow up on recurring issues instead of repeating itself.
+    const report = coach(analysis, { history: await upgradeAll(await store.listSessions()) });
     const track = packTrack(out.frames, out.aspect);
     const thumb = await grabThumbnail(video, (analysis.window.t0 + analysis.window.t1) / 2);
 
@@ -298,14 +299,15 @@ async function showResult(session) {
 // ---------- history ----------
 
 // Re-analyses climbs saved by an older version, from their stored poses (no video needed).
-async function upgradeSession(s) {
+// earlier: the climbs saved before this one, already upgraded.
+async function upgradeSession(s, earlier = []) {
   if ((s.analysisVersion || 1) >= ANALYSIS_VERSION) return s;
   try {
     if (s.track) {
       const analysis = analyze(framesFromTrack(s.track), { frameHeightPx: s.videoHeight || null, terrain: s.terrain });
       if (analysis.ok) s.analysis = analysis;
     }
-    s.report = coach(s.analysis);
+    s.report = coach(s.analysis, { history: earlier });
     // Climbs saved before auto-detection had their result chosen by hand.
     if (!s.outcomeSource) s.outcomeSource = 'user';
     s.analysisVersion = ANALYSIS_VERSION;
@@ -313,10 +315,13 @@ async function upgradeSession(s) {
   } catch (e) { console.warn('Could not upgrade session', s.id, e); }
   return s;
 }
+// Oldest first, so each climb's coaching can refer back to the ones before it.
+// Returns the sessions in the order they were given.
 async function upgradeAll(sessions) {
-  const out = [];
-  for (const s of sessions) out.push(await upgradeSession(s));
-  return out;
+  const done = [];
+  for (const s of [...sessions].sort((a, b) => a.createdAt - b.createdAt)) done.push(await upgradeSession(s, done.slice()));
+  const byId = new Map(done.map((s) => [s.id, s]));
+  return sessions.map((s) => byId.get(s.id));
 }
 
 let detailPlayer = null;
@@ -350,10 +355,9 @@ async function refreshHistory() {
 }
 
 async function openSession(id, fromProgress = false) {
-  let s = await store.getSession(id);
+  const history = await upgradeAll(await store.listSessions());
+  const s = history.find((x) => x.id === id);
   if (!s) return;
-  s = await upgradeSession(s);
-  const history = await store.listSessions();
   if (fromProgress) showView('history');
   $('history-list').hidden = true;
   const box = $('history-detail');

@@ -137,6 +137,7 @@ export function renderReport(container, session, opts = {}) {
     container.append(h('div', { class: 'card fall-card' },
       h('h3', { text: f.headline }),
       h('p', { class: 'muted small', text: f.detail }),
+      f.pattern ? h('p', { class: 'warn-inline', text: f.pattern }) : null,
       replayBox,
       p ? h('div', { class: 'cause' },
         h('div', { class: 'bar-head' }, h('h4', { text: p.key === 'unclear' ? p.title : `Most likely: ${p.title}` }), confBadge(p.confidence)),
@@ -174,6 +175,7 @@ export function renderReport(container, session, opts = {}) {
       h('ol', { class: 'plan' }, r.actionPlan.map((p) => h('li', {},
         h('div', { class: 'bar-head' }, h('h4', { text: p.title }), confBadge(p.confidence)),
         labelled('What we saw:', p.saw),
+        labelled('Over your climbs:', p.history),
         labelled('Why it matters:', p.why),
         labelled('Next time:', p.doThis, 'cue'),
         p.drill ? h('div', { class: 'drill', text: p.drill }) : null,
@@ -206,7 +208,7 @@ export function renderReport(container, session, opts = {}) {
   if (r.strengths?.length) {
     container.append(card('✓ What you did well',
       h('ul', { class: 'feedback' }, r.strengths.map((s) => h('li', {},
-        h('h4', {}, h('span', { text: s.label }), h('span', { class: 'status status-good', text: String(s.score) })),
+        h('h4', {}, h('span', {}, s.label, s.tag === 'fixed' ? h('span', { class: 'pill', style: 'margin-left:6px', text: 'Fixed' }) : null), h('span', { class: 'status status-good', text: String(s.score) })),
         h('p', { text: s.text }),
       ))),
     ));
@@ -339,6 +341,7 @@ export function renderReport(container, session, opts = {}) {
             ? h('p', { class: 'small' }, h('strong', { text: `Covered in your plan (#${it.inPlan}).` }))
             : [
               it.text ? h('p', {}, it.confidence === 'low' ? h('em', { text: 'Possibly: ' }) : null, it.text) : null,
+              it.inPlan ? null : labelled('Over your climbs:', it.history),
               labelled('Why it matters:', it.why),
               !it.info && isNum(it.score) && it.score < 65 ? labelled('Next time:', it.cue, 'cue') : null,
               !it.info && isNum(it.score) && it.score < 50 ? h('div', { class: 'drill', text: it.drill }) : null,
@@ -365,7 +368,10 @@ export function renderReport(container, session, opts = {}) {
     const prev = [...hist].sort((x, y) => y.createdAt - x.createdAt)[0];
     const lastFocus = prev.report.actionPlan?.[0] || prev.report.improvements?.[0];
     let focusText = null;
-    if (lastFocus) {
+    // Newer reports list what changed since the last climb (fixes are shown under strengths).
+    const changes = (r.sinceLast || []).filter((x) => x.kind !== 'fixed');
+    if (r.sinceLast) focusText = changes.length ? `Since your last climb: ${changes.map((x) => x.text).join(' ')}` : null;
+    else if (lastFocus) {
       const key = lastFocus.key || prev.report.improvements?.find((i) => i.label === lastFocus.title)?.key;
       const before = prev.report.items?.find((i) => i.key === key)?.score;
       const now = r.items.find((i) => i.key === key)?.score;
