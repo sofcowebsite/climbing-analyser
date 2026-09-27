@@ -355,6 +355,98 @@ function trendNote(it, H, k = 0) {
   return null;
 }
 
+// ---------- the coaches ----------
+// Each analysis level is presented as its own coach: how carefully the video is tracked, and
+// how much of the report is shown up front. Pick one in Settings or before analysing.
+export const COACHES = {
+  pip: {
+    id: 'pip', name: 'Pip', role: 'Quick look', quality: 'fast', level: 'simple',
+    speed: 'Fastest', detail: 'Short and simple',
+    blurb: 'A fast check with a short, plain report: how it went, the one thing to work on, and what you did well. Less accurate on small or partly hidden climbers.',
+  },
+  rowan: {
+    id: 'rowan', name: 'Rowan', role: 'All-round coach', quality: 'accurate', level: 'standard',
+    speed: 'Balanced', detail: 'Clear, with detail on request',
+    blurb: 'Accurate tracking at a sensible speed. A clear report with a three-point plan; the technical extras are tucked away under "More detail".',
+  },
+  sage: {
+    id: 'sage', name: 'Sage', role: 'Deep dive', quality: 'max', level: 'expert',
+    speed: 'About 3× slower', detail: 'Everything, with all the numbers',
+    blurb: 'The most accurate tracking (best for hidden legs and far-away climbers) and the full report: every measurement, the movement timeline and all the numbers.',
+  },
+};
+export const coachForQuality = (q) => Object.values(COACHES).find((c) => c.quality === q) || COACHES.rowan;
+
+// Everyday words for each measure, for the coach's short summary.
+const PLAIN = {
+  feetFirstRatio: 'moving your feet before your hands',
+  footHandRatio: 'moving your feet more often',
+  footReadjustRate: 'placing each foot once, precisely',
+  straightArmRatio: 'resting on straight arms',
+  legDrive: 'pushing up with your legs',
+  balanceOffset: 'keeping your hips over your feet',
+  turnedShare: 'turning your hips into the wall',
+  pathEfficiency: 'moving in a direct line',
+  controlledRatio: 'arriving at holds in control',
+  jerkyPerMin: 'moving smoothly',
+  hesitationsPerMin: 'keeping moving instead of stopping to think',
+  handReadjustRate: 'grabbing each hold once',
+};
+const FALL_PLAIN = {
+  missedCatch: 'you reached the hold but couldn\'t hold on to it',
+  lateCatch: 'you grabbed the hold a moment too late on a dynamic move',
+  overreach: 'you were at full stretch when you grabbed the hold',
+  feetCut: 'your feet came off the wall as you moved',
+  handSlip: 'your hand slid off the hold',
+  footSlip: 'your foot slipped first',
+  barnDoor: 'your body swung open sideways',
+  lockoff: 'your bent arm gave out',
+  stalled: 'you stayed too long in the hard part',
+  pump: 'your forearms were too tired (pumped)',
+};
+const firstSentence = (t) => (t || '').split(/(?<=[.!?])\s/)[0];
+const lower1 = (t) => (t ? t.charAt(0).toLowerCase() + t.slice(1) : t);
+
+// The coach's short, plain-language summary: how it went, what went well, what to do next.
+function coachTake(rep, coachId) {
+  const c = COACHES[coachId] || COACHES.rowan;
+  const simple = c.level === 'simple', expert = c.level === 'expert';
+  const lines = [];
+  const oc = rep.outcome;
+  const lastFall = rep.fallAnalyses[rep.fallAnalyses.length - 1];
+  if (oc?.result === 'topped' || oc?.result === 'finished') {
+    lines.push(pick(simple ? ['Nice one: you made it to the top!', 'You got to the top. Great effort!'] : expert ? [`You completed the climb (${oc.result === 'topped' ? 'topped out' : 'held the finish'}).`] : ['You got to the top.', 'You finished the climb.'], rep.overall || 0));
+  } else if (oc?.result === 'fell' && lastFall) {
+    const why = FALL_PLAIN[lastFall.primary?.key];
+    lines.push(`You came off at ${lastFall.clock}${lastFall.move ? ` on move ${lastFall.move.n}` : ''}.${why ? ` It looks like ${why}.` : ' The video doesn\'t show one clear reason.'}`);
+  } else if (oc) lines.push(simple ? 'I couldn\'t tell for sure how the climb ended. You can set the result below.' : 'The video doesn\'t show clearly how the climb ended, so check the result below.');
+
+  const good = rep.strengths.find((s) => s.tag === 'fixed') || rep.strengths.find((s) => s.tag !== 'steady') || rep.strengths[0];
+  if (good) {
+    if (good.key === 'habits') {
+      const what = good.keys.map((k) => PLAIN[k]).filter(Boolean).slice(0, 2).join(' and ');
+      lines.push(simple ? `You're still great at ${what}.` : `Still going well: ${what}.`);
+    } else {
+      const what = PLAIN[good.key] || lower1(good.label);
+      lines.push(good.tag === 'fixed' ? `You fixed ${what} since last time. Well done!` : simple ? `You were great at ${what}.` : `Best part: ${what}${expert && isNum(good.score) ? ` (${good.score}/100)` : ''}.`);
+    }
+  }
+
+  const plan = rep.actionPlan;
+  const focusText = (p) => (p.key?.startsWith('fall:') ? 'the move you came off' : (p.key && PLAIN[p.key]) || lower1(p.title));
+  if (plan[0]) {
+    const p = plan[0];
+    const how = firstSentence(p.doThis);
+    lines.push(simple ? `Next time, try this: ${how}` : `Most important next time: ${focusText(p)}. ${how}`);
+  } else if (!rep.improvements.length) lines.push('Nothing stood out as a clear weakness. Keep climbing like this.');
+  if (!simple && plan[1]) lines.push(`After that: ${focusText(plan[1])}${plan[2] ? `, then ${focusText(plan[2])}` : ''}.`);
+
+  if (!simple && rep.sinceLastHeadline) lines.push(rep.sinceLastHeadline);
+  if (expert && isNum(rep.overall)) lines.push(`Technique score ${rep.overall}/100 (${scoreLabel(rep.overall).toLowerCase()}); tracking reliability ${rep.reliability.level}.`);
+  if (rep.reliability.level === 'low') lines.push(simple ? 'The video was hard to read, so take this as a rough guide.' : 'The tracking was weak on this video, so treat these points as rough.');
+  return { coach: c.id, name: c.name, role: c.role, lines };
+}
+
 export const CATEGORIES = {
   footwork: { label: 'Footwork', blurb: 'How much your feet move, whether they lead your hands, and how precisely you place them.' },
   arms: { label: 'Arm efficiency', blurb: 'Hanging on straight arms and pushing with your legs.' },
@@ -460,7 +552,8 @@ function confidenceFor(it, m, nMoves) {
 // ---------- the full report ----------
 
 // history: earlier saved sessions ({ createdAt, report }), used to vary the coaching.
-export function coach(result, { history } = {}) {
+// coach: which coach presents it (see COACHES). venue: 'outdoor' | 'indoor'.
+export function coach(result, { history, coach: coachId = 'rowan', venue = result.venue || null } = {}) {
   const m = result.metrics;
   const moves = result.moves || [];
   const H = historyIndex(history);
@@ -560,7 +653,7 @@ export function coach(result, { history } = {}) {
   // How it ended, and a breakdown of every fall.
   const outcome = result.outcome || null;
   const fallAnalyses = [];
-  for (const [k, f] of (result.falls || []).entries()) fallAnalyses.push(describeFall(f, k, result, H, fallAnalyses));
+  for (const [k, f] of (result.falls || []).entries()) fallAnalyses.push(describeFall(f, k, result, H, fallAnalyses, venue));
 
   // Other observations (not scored).
   const notes = [];
@@ -617,7 +710,9 @@ export function coach(result, { history } = {}) {
   const reliability = reliabilityCheck(m, moves.length, result);
   const movement = movementAnalysis(result.labels, H);
 
-  return { overall, categories, items, strengths, improvements, notes, summary, actionPlan, moveReview, movePatterns: movePatternsList, moveSummary, sectionInsights, sideInsights, extraInsights, outcome, fallAnalyses, reliability, movement, sinceLast: sinceLast.list };
+  const rep = { overall, categories, items, strengths, improvements, notes, summary, actionPlan, moveReview, movePatterns: movePatternsList, moveSummary, sectionInsights, sideInsights, extraInsights, outcome, fallAnalyses, reliability, movement, sinceLast: sinceLast.list, sinceLastHeadline: sinceLast.headline, venue, coach: COACHES[coachId] ? coachId : 'rowan' };
+  rep.take = coachTake(rep, rep.coach);
+  return rep;
 }
 
 // What changed since the previous climb: fixes, new problems and big moves in each area.
@@ -760,8 +855,14 @@ function movementAnalysis(labels, H) {
 
 const fmtClock = (t) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}`;
 
-function describeFall(f, k, result, H, earlier = []) {
-  const causes = f.causes.map((c) => ({ ...c, ...(FALL_CAUSES[c.key] || FALL_CAUSES.unclear) }));
+// Some fixes differ between rock and gym walls ({ outdoor, indoor }); unknown venue gets the outdoor text.
+const forVenue = (x, venue) => (typeof x === 'string' ? x : venue === 'indoor' ? x.indoor : x.outdoor);
+
+function describeFall(f, k, result, H, earlier = [], venue = null) {
+  const causes = f.causes.map((c) => {
+    const def = FALL_CAUSES[c.key] || FALL_CAUSES.unclear;
+    return { ...c, ...def, fixes: def.fixes.map((x) => forVenue(x, venue)) };
+  });
   // Lead with the most solid explanation; keep weaker ones as "also possible".
   const primary = causes[0] || null;
   // The same cause on earlier climbs (or earlier in this one) is a pattern: say so, lead with

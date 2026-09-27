@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { analyze } from '../js/metrics.js';
-import { coach, METRIC_DEFS } from '../js/coach.js';
+import { coach, METRIC_DEFS, COACHES, coachForQuality } from '../js/coach.js';
 import { makeClimb, withEnding } from './synthetic.mjs';
 
 const climb = (seed, ending = 'footSlip') => analyze(withEnding(makeClimb({ cycles: 5, noise: 0.004, seed }), ending), { terrain: 'vertical' });
@@ -123,4 +123,39 @@ test('old or broken history entries are ignored', () => {
   const r = climb(2);
   const junk = [null, {}, { report: null }, { createdAt: 1, report: { overall: 50 } }, { createdAt: 2, report: { items: [], improvements: [{ key: 'legDrive' }] } }];
   assert.doesNotThrow(() => coach(r, { history: junk }));
+});
+
+test('each coach gives its own short summary', () => {
+  const r = climb(2, 'barnDoor');
+  const pip = coach(r, { coach: 'pip' }), rowan = coach(r, { coach: 'rowan' }), sage = coach(r, { coach: 'sage' });
+  assert.equal(pip.coach, 'pip'); assert.equal(sage.take.name, 'Sage');
+  for (const c of [pip, rowan, sage]) {
+    assert.ok(c.take.lines.length >= 2);
+    assert.match(c.take.lines[0], /came off at/);
+  }
+  assert.ok(pip.take.lines.length < sage.take.lines.length, 'the quick coach is shorter');
+  assert.ok(!pip.take.lines.some((l) => /\/100/.test(l)), 'no scores in the quick summary');
+  assert.ok(sage.take.lines.some((l) => /Technique score \d+\/100/.test(l)));
+  // Unknown coach ids fall back to the all-round coach.
+  assert.equal(coach(r, { coach: 'nobody' }).coach, 'rowan');
+});
+
+test('coaches map to analysis quality levels', () => {
+  assert.equal(coachForQuality('fast').id, 'pip');
+  assert.equal(coachForQuality('accurate').id, 'rowan');
+  assert.equal(coachForQuality('max').id, 'sage');
+  assert.equal(coachForQuality(undefined).id, 'rowan');
+  assert.deepEqual(Object.values(COACHES).map((c) => c.level), ['simple', 'standard', 'expert']);
+});
+
+test('indoor and outdoor climbs get matching fall advice', () => {
+  const frames = withEnding(makeClimb({ cycles: 5, noise: 0.004, seed: 1 }), 'footSlip');
+  const out = coach(analyze(frames, { venue: 'outdoor' }));
+  const ind = coach(analyze(frames, { venue: 'indoor' }));
+  assert.equal(ind.venue, 'indoor');
+  const fixes = (c) => c.fallAnalyses[0].primary.fixes.join(' ');
+  assert.match(fixes(out), /brush the foothold/);
+  assert.match(fixes(ind), /Gym footholds/);
+  assert.doesNotMatch(fixes(ind), /brush the foothold/);
+  for (const c of [out, ind]) for (const f of c.fallAnalyses[0].primary.fixes) assert.equal(typeof f, 'string');
 });

@@ -14,6 +14,10 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <script>
+    // Apply a forced light/dark theme before the page draws, so it doesn't flash.
+    try { var t = JSON.parse(localStorage.getItem('crux-coach-settings') || '{}').theme; if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) { /* no storage */ }
+  </script>
   <link rel="stylesheet" href="css/styles.css">
   <link rel="modulepreload" href="vendor/mediapipe/vision_bundle.mjs">
   <link rel="modulepreload" href="js/pose.js">
@@ -72,6 +76,19 @@
             <button class="btn btn-small" id="set-end">Set to current</button>
           </div>
           <button class="btn btn-link small" id="reset-trim">Reset trim</button>
+        </div>
+
+        <div class="card">
+          <h3>How to analyse it</h3>
+          <span class="field-label">Where was it filmed?</span>
+          <div class="seg" role="radiogroup" aria-label="Where was it filmed?">
+            <label><input type="radio" name="venue" value="outdoor"><span>Outdoor</span></label>
+            <label><input type="radio" name="venue" value="indoor"><span>Indoor (gym)</span></label>
+          </div>
+          <p class="field-help venue-help"></p>
+          <span class="field-label">Your coach</span>
+          <div class="coach-compact" id="coach-pick-setup" role="radiogroup" aria-label="Your coach"></div>
+          <p class="field-help" id="coach-help-setup"></p>
         </div>
 
         <form class="card" id="details-form" autocomplete="off">
@@ -160,29 +177,45 @@
       </div>
 
       <div class="card">
+        <h3>Your coach</h3>
+        <p class="muted small">Each coach analyses at a different level. Quicker coaches give shorter, simpler reports; slower ones track more carefully and show more. You can also switch before each climb.</p>
+        <div class="coach-list" id="coach-pick-settings" role="radiogroup" aria-label="Your coach"></div>
+      </div>
+
+      <div class="card">
         <h3>Settings</h3>
-        <label class="field">Your height (cm)
+        <span class="field-label" style="margin-top:0">Where do you usually climb?</span>
+        <div class="seg" role="radiogroup" aria-label="Where do you usually climb?">
+          <label><input type="radio" name="set-venue" value="outdoor"><span>Outdoor</span></label>
+          <label><input type="radio" name="set-venue" value="indoor"><span>Indoor (gym)</span></label>
+        </div>
+        <p class="field-help venue-help"></p>
+
+        <span class="field-label">Appearance</span>
+        <div class="seg" role="radiogroup" aria-label="Appearance">
+          <label><input type="radio" name="set-theme" value="auto"><span>Auto</span></label>
+          <label><input type="radio" name="set-theme" value="light"><span>Light</span></label>
+          <label><input type="radio" name="set-theme" value="dark"><span>Dark</span></label>
+        </div>
+
+        <label class="field" style="margin-top:14px">Your height (cm)
           <input id="set-height" type="number" inputmode="numeric" min="100" max="230" placeholder="Used to estimate metres climbed">
         </label>
-        <label class="field">Analysis quality
-          <select id="set-model">
-            <option value="accurate">Accurate (recommended)</option>
-            <option value="max">Maximum: best for hidden legs, about 3× slower</option>
-            <option value="fast">Fast: less accurate</option>
-          </select>
-        </label>
-        <label class="field">Frames analysed per second
-          <select id="set-fps">
-            <option value="8">8 (quicker)</option>
-            <option value="10">10</option>
-            <option value="12">12 (balanced)</option>
-            <option value="15">15 (more detail, slower)</option>
-          </select>
-        </label>
-        <label class="check">
-          <input id="set-cpu" type="checkbox">
-          Compatibility mode (use CPU). Turn this on if analysis fails or finds no body.
-        </label>
+        <details>
+          <summary class="small">Advanced</summary>
+          <label class="field" style="margin-top:10px">Frames analysed per second
+            <select id="set-fps">
+              <option value="8">8 (quicker)</option>
+              <option value="10">10</option>
+              <option value="12">12 (balanced)</option>
+              <option value="15">15 (more detail, slower)</option>
+            </select>
+          </label>
+          <label class="check">
+            <input id="set-cpu" type="checkbox">
+            Compatibility mode (use CPU). Turn this on if analysis fails or finds no body.
+          </label>
+        </details>
       </div>
 
       <div class="card">
@@ -207,6 +240,7 @@
         </ul>
         <p>It also works out how the climb ended (top-out, matched finish, lower-off or fall). Coming off within about a second of reaching a hold counts as a fall. For every fall it replays the last seconds and looks for the cause: missed catch, late dead-point, over-reach, feet cutting, hand or foot slip, barn door, lock-off, stalling or pump. Every finding shows how sure the app is.</p>
         <p>Every half second is also labelled with what your body and each hand and foot were doing, following a research-based framework for climbing video. Anything one camera can't show (grip type, how close your hips are to the wall, whether a foot is weighted) is marked "unknown" instead of guessed. You can export these labels.</p>
+        <p><strong>The coaches.</strong> Pip, Rowan and Sage are the three analysis levels. They're the same rules-based analysis, not different AIs. Pip uses the fastest, lightest pose model and shows a short report. Rowan uses the standard model with a mirrored second check and shows the main report, with the technical extras under "More detail". Sage uses the largest model and shows everything. <strong>Outdoor or indoor</strong> changes how hard the app searches for a small, far-away climber, and swaps rock-specific tips (brushing holds, cool conditions) for gym ones (polished holds, chalk build-up, loose holds).</p>
         <p>Each measurement is scored 0–100 against coaching rules. It's then turned into a move-by-move review, a start/middle/top comparison, left vs. right, and a top-3 plan with drills and targets for your next session.</p>
       </details>
 

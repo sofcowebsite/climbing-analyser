@@ -75,7 +75,10 @@ export const FALL_CAUSES = {
       'Match your body to the hold\'s direction: slopers and sidepulls only work when your body is below or opposite them. Move your hips so you pull along the hold\'s best angle, not across it.',
       'Grip technique: on crimps, wrap the thumb over the index finger. On slopers, keep the wrist low and the palm high for maximum skin contact. On pinches, squeeze with the thumb as hard as the fingers.',
       'Set the grip before you weight it. After catching, give it a split second to settle before moving your next limb.',
-      'Outdoors, friction is often the real limit: brush the hold, chalk before the crux, and try again in cooler, drier conditions (mornings, shade, wind).',
+      {
+        outdoor: 'Outdoors, friction is often the real limit: brush the hold, chalk before the crux, and try again in cooler, drier conditions (mornings, shade, wind).',
+        indoor: 'Friction matters indoors too: brush the hold (chalk build-up and rubber dust make it slick), chalk before the hard move, and expect slopers to feel better in a cool, quiet session than a hot, busy one.',
+      },
     ],
     drill: 'Hang the hold in the position you fell from (feet on) for 5 seconds, 3 times, trying different grip positions and hip positions. Find the one where it feels most secure.',
     moreDrills: [
@@ -92,7 +95,10 @@ export const FALL_CAUSES = {
       'On smears: drop your heel to get more rubber on the rock, and keep your hips out and over the foot. The more you lean in, the worse a smear sticks.',
       'On edges: stand on the inside edge at the big toe with a stiff ankle. Don\'t roll onto your toe tip or the outside of the shoe when you push hard.',
       'Don\'t explode off a foot you\'ve just placed. Load it progressively for half a second first, especially on polished or dusty footholds.',
-      'Clean shoe rubber (wipe it on your trousers or lick-and-rub) and brush the foothold outdoors. Dusty rubber loses a lot of friction.',
+      {
+        outdoor: 'Clean shoe rubber (wipe it on your trousers or lick-and-rub) and brush the foothold. Dusty rubber loses a lot of friction.',
+        indoor: 'Clean shoe rubber (wipe it on your trousers or lick-and-rub). Gym footholds get polished and coated in rubber, so stand on the textured part of the hold, not the shiny part.',
+      },
     ],
     drill: '"Hover and weight": place the foot, look at it, weight it fully for 2 seconds, then make the hand move. Repeat the crux 3× like this, then at normal speed while still watching the foot until it\'s loaded.',
     moreDrills: [
@@ -170,7 +176,10 @@ export const FALL_CAUSES = {
     fixes: [
       'Watch the replay at 0.25× and focus only on the hand on the hold: did it land on the best part? Did it move after landing?',
       'Try the move with a different grip, or a thumb catch, or grabbing 2–3 cm to the side.',
-      'Check the conditions: warm, humid or dusty rock makes marginal holds unusable. Brush, chalk, and retry when it\'s cooler.',
+      {
+        outdoor: 'Check the conditions: warm, humid or dusty rock makes marginal holds unusable. Brush, chalk, and retry when it\'s cooler.',
+        indoor: 'Check the hold: brush off the chalk build-up and chalk up before retrying. If a hold feels loose or has spun, tell the gym staff instead of trying again.',
+      },
     ],
     drill: 'Do the move three times from the position just before, changing only one thing each time (grip, hand position, hip position), and note which feels most secure.',
     moreDrills: [

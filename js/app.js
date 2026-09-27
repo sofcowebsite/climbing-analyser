@@ -1,8 +1,8 @@
 import { analyze, ANALYSIS_VERSION } from './metrics.js';
 import { framesFromTrack } from './refine.js';
-import { coach } from './coach.js';
+import { coach, COACHES, coachForQuality } from './coach.js';
 import { createPlayer, packTrack, displayTrack } from './player.js';
-import { renderReport, fmtTime, fmtDate, h, gradeScaleOptions } from './report.js';
+import { renderReport, fmtTime, fmtDate, h, gradeScaleOptions, coachAvatar } from './report.js';
 import { renderProgress } from './progress.js';
 import { GRADE_SCALES } from './grades.js';
 import * as store from './storage.js';
@@ -187,7 +187,9 @@ async function runAnalysis() {
     grade: form.elements.grade.value,
     notes: form.elements.notes.value.trim(),
     terrain: form.elements.terrain.value,
+    venue: settings.venue === 'indoor' ? 'indoor' : 'outdoor',
   };
+  const coachInfo = coachForQuality(settings.quality);
   // Prime decoding inside the tap (iOS won't seek an untouched video reliably).
   try { await video.play(); video.pause(); } catch { /* fine */ }
 
@@ -213,11 +215,12 @@ async function runAnalysis() {
       signal: abort.signal,
       hint: pick,
       twoPass: q.twoPass,
+      venue: details.venue,
       onFrame: (frac, pts, box) => {
         player.setLive(pts, box);
         const el = (performance.now() - analysisStart) / 1000;
         const eta = frac > 0.03 ? Math.max(0, el / frac - el) : null;
-        setProgress('Analysing your climb…', frac, `${Math.round(frac * 100)}%${eta !== null ? ` · about ${Math.ceil(eta)} s left` : ''}. Keep this screen open.`);
+        setProgress(`${coachInfo.name} is analysing your climb…`, frac, `${Math.round(frac * 100)}%${eta !== null ? ` · about ${Math.ceil(eta)} s left` : ''}. Keep this screen open.`);
       },
     });
     let out = await run(landmarker);
@@ -231,10 +234,10 @@ async function runAnalysis() {
 
     setProgress('Working out your technique…', 1, '');
     window.__crux.lastRun = out; // for debugging and automated tests
-    const analysis = analyze(out.frames, { frameHeightPx: out.height, terrain: details.terrain });
+    const analysis = analyze(out.frames, { frameHeightPx: out.height, terrain: details.terrain, venue: details.venue });
     if (!analysis.ok) throw new Error(analysis.reason);
     // Earlier climbs let the coaching follow up on recurring issues instead of repeating itself.
-    const report = coach(analysis, { history: await upgradeAll(await store.listSessions()) });
+    const report = coach(analysis, { history: await upgradeAll(await store.listSessions()), coach: coachInfo.id, venue: details.venue });
     const track = packTrack(out.frames, out.aspect);
     const thumb = await grabThumbnail(video, (analysis.window.t0 + analysis.window.t1) / 2);
 
@@ -250,6 +253,7 @@ async function runAnalysis() {
       // "Detect from video" uses the detected ending; an explicit answer always wins.
       outcome: details.outcome === 'auto' ? auto : details.outcome,
       outcomeSource: details.outcome === 'auto' ? 'auto' : 'user',
+      coach: coachInfo.id,
       settings: { quality: settings.quality, fps: settings.fps },
       analysis,
       report,
@@ -286,10 +290,10 @@ async function showResult(session) {
       heightCm: settings.heightCm, history, track, aspect: session.track?.aspect,
       onSeek: (t, rate) => player.seek(t, rate),
       onSetOutcome: async (val) => { session.outcome = val; session.outcomeSource = 'user'; await store.saveSession(session); draw(); toast('Saved.'); },
+      footer: h('div', { class: 'actions' },
+        h('label', { class: 'btn btn-primary btn-block', for: 'file-input', text: 'Analyse another video' }),
+      ),
     });
-    box.append(h('div', { class: 'actions' },
-      h('label', { class: 'btn btn-primary btn-block', for: 'file-input', text: 'Analyse another video' }),
-    ));
   };
   draw();
   $('video-area').scrollIntoView({ block: 'start' });
@@ -304,10 +308,12 @@ async function upgradeSession(s, earlier = []) {
   if ((s.analysisVersion || 1) >= ANALYSIS_VERSION) return s;
   try {
     if (s.track) {
-      const analysis = analyze(framesFromTrack(s.track), { frameHeightPx: s.videoHeight || null, terrain: s.terrain });
+      const analysis = analyze(framesFromTrack(s.track), { frameHeightPx: s.videoHeight || null, terrain: s.terrain, venue: s.venue });
       if (analysis.ok) s.analysis = analysis;
     }
-    s.report = coach(s.analysis, { history: earlier });
+    // Climbs from before the coaches get the coach matching the quality they were analysed at.
+    if (!s.coach) s.coach = coachForQuality(s.settings?.quality).id;
+    s.report = coach(s.analysis, { history: earlier, coach: s.coach, venue: s.venue });
     // Climbs saved before auto-detection had their result chosen by hand.
     if (!s.outcomeSource) s.outcomeSource = 'user';
     s.analysisVersion = ANALYSIS_VERSION;
@@ -418,9 +424,60 @@ async function refreshProgress() {
 
 // ---------- settings & data ----------
 
+// ----- light / dark -----
+const THEME_COLORS = { light: '#f9f9f7', dark: '#0d0d0d' };
+function applyTheme(theme) {
+  const root = document.documentElement;
+  if (theme === 'light' || theme === 'dark') root.setAttribute('data-theme', theme);
+  else root.removeAttribute('data-theme');
+  // The browser bar colour: forced themes override the light/dark pair.
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) {
+    const own = m.media.includes('dark') ? 'dark' : 'light';
+    m.content = THEME_COLORS[theme === 'light' || theme === 'dark' ? theme : own];
+  }
+}
+
+// ----- where the video was filmed -----
+const VENUE_HELP = {
+  outdoor: 'Outdoor: searches the whole frame down to small sizes for climbers filmed from far away, and retries more missed frames. Tips mention rock conditions.',
+  indoor: 'Indoor: expects a closer, bigger climber with other people around, so the search is quicker. Tips cover gym holds (polish, chalk build-up, loose holds).',
+};
+function syncVenue() {
+  for (const r of document.querySelectorAll('input[name="venue"], input[name="set-venue"]')) r.checked = r.value === settings.venue;
+  for (const p of document.querySelectorAll('.venue-help')) p.textContent = VENUE_HELP[settings.venue] || '';
+}
+
+// ----- coaches -----
+// Two pickers (before analysing, and in Settings) share one setting: the coach sets the quality.
+function renderCoachPickers() {
+  const current = coachForQuality(settings.quality).id;
+  const build = (box, name, compact) => {
+    box.replaceChildren(...Object.values(COACHES).map((c) => {
+      const input = h('input', { type: 'radio', name, value: c.id });
+      input.checked = c.id === current;
+      input.addEventListener('change', () => {
+        settings.quality = c.quality;
+        store.saveSettings(settings);
+        renderCoachPickers();
+        if (player) startPreload();
+      });
+      return h('label', { class: 'coach-option' }, input, coachAvatar(c, compact ? 36 : 44),
+        compact
+          ? h('div', {}, h('div', { class: 'name', text: c.name }), h('div', { class: 'role', text: c.role }))
+          : h('div', {},
+            h('div', { class: 'name', text: `${c.name} · ${c.role}${c.id === 'rowan' ? ' (recommended)' : ''}` }),
+            h('p', { text: c.blurb }),
+            h('div', { class: 'tags' }, h('span', { class: 'pill', text: c.speed }), h('span', { class: 'pill', text: c.detail }))));
+    }));
+  };
+  build($('coach-pick-setup'), 'coach', true);
+  build($('coach-pick-settings'), 'set-coach', false);
+  const c = COACHES[current];
+  $('coach-help-setup').textContent = `${c.name}: ${c.blurb}`;
+}
+
 function bindSettings() {
   $('set-height').value = settings.heightCm || '';
-  $('set-model').value = settings.quality;
   $('set-fps').value = String(settings.fps);
   $('set-cpu').checked = !!settings.preferCpu;
   $('set-height').addEventListener('change', (e) => {
@@ -428,7 +485,16 @@ function bindSettings() {
     settings.heightCm = v >= 100 && v <= 230 ? v : null;
     store.saveSettings(settings);
   });
-  $('set-model').addEventListener('change', (e) => { settings.quality = e.target.value; store.saveSettings(settings); if (player) startPreload(); });
+  for (const r of document.querySelectorAll('input[name="venue"], input[name="set-venue"]')) {
+    r.addEventListener('change', () => { if (r.checked) { settings.venue = r.value; store.saveSettings(settings); syncVenue(); } });
+  }
+  for (const r of document.querySelectorAll('input[name="set-theme"]')) {
+    r.checked = r.value === (settings.theme || 'auto');
+    r.addEventListener('change', () => { if (r.checked) { settings.theme = r.value; store.saveSettings(settings); applyTheme(settings.theme); } });
+  }
+  syncVenue();
+  renderCoachPickers();
+  applyTheme(settings.theme);
   $('set-fps').addEventListener('change', (e) => { settings.fps = Number(e.target.value); store.saveSettings(settings); });
   $('set-cpu').addEventListener('change', (e) => { settings.preferCpu = e.target.checked; store.saveSettings(settings); if (player) startPreload(); });
 }

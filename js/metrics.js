@@ -18,7 +18,7 @@ export const LM = {
 };
 
 // Bumped when the analysis changes; older saved sessions are re-analysed from their stored poses.
-export const ANALYSIS_VERSION = 8;
+export const ANALYSIS_VERSION = 9;
 
 // Landmarks kept when a session is stored (enough to redraw the skeleton).
 export const KEPT_LANDMARKS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -551,6 +551,7 @@ export function analyze(allFrames, opts = {}) {
 
   return {
     ok: true,
+    venue: opts.venue || null,
     torso: T,
     moves: detail.moves,
     outcome: { result: outcome.result, confidence: outcome.confidence, headline: outcome.headline, evidence: outcome.evidence, alternatives: outcome.alternatives },

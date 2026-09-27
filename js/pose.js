@@ -242,12 +242,13 @@ const yieldToUi = () => new Promise((r) => setTimeout(r, 0));
 
 // Scans the whole frame in overlapping tiles so small, far-away people are found.
 // Yields between tiles so the page stays responsive.
-async function searchFrame(landmarker, video, ctx, W, H) {
+// tiles: tile sizes to try, as a share of the frame (smaller finds smaller people, slower).
+async function searchFrame(landmarker, video, ctx, W, H, tiles = [0.5, 0.3]) {
   const found = [];
   const add = (poses) => { for (const p of poses) if (coreVis(p) >= 0.5) found.push(p); };
   const full = Math.max(W, H);
   add(detectRegion(landmarker, video, ctx, W, H, (W - full) / 2, (H - full) / 2, full));
-  for (const frac of [0.5, 0.3]) {
+  for (const frac of tiles) {
     const S = Math.round(Math.min(W, H) * frac * (H > W ? 1.4 : 1));
     const step = S / 2;
     for (let y = 0; y <= H - S / 2; y += step) {
@@ -329,7 +330,18 @@ function playbackCapture(video, times, handle, signal) {
  * onFrame(progress 0..1, pts|null, box|null) is called after each frame for live preview
  * (pts: [[x, y, v]] normalised 0..1; box: tracked region normalised 0..1).
  */
-export async function processVideo(video, { landmarker, fps = 10, start = 0, end = null, onFrame, signal, hint = null, twoPass = false }) {
+// How to search, depending on where the video was filmed. Outdoor climbers are often filmed
+// from far away (small in the frame, lots of rock and sky), so the search goes down to small
+// tiles, the tracking crop may shrink further and more missed frames are retried. Indoors the
+// climber is usually closer and bigger, with other people around: bigger tiles and crops are
+// enough (and faster), and fewer retries are needed.
+export const VENUE_STRATEGY = {
+  outdoor: { tiles: [0.5, 0.3], minCrop: 0.08, retryShare: 0.25, retryMin: 30 },
+  indoor: { tiles: [0.6], minCrop: 0.15, retryShare: 0.15, retryMin: 20 },
+};
+
+export async function processVideo(video, { landmarker, fps = 10, start = 0, end = null, onFrame, signal, hint = null, twoPass = false, venue = 'outdoor' }) {
+  const strat = VENUE_STRATEGY[venue] || VENUE_STRATEGY.outdoor;
   const duration = video.duration;
   const tEnd = Math.min(end ?? duration, duration - 0.05);
   const W = video.videoWidth, H = video.videoHeight;
@@ -357,7 +369,7 @@ export async function processVideo(video, { landmarker, fps = 10, start = 0, end
   const camera = createCameraTracker(mw, mh);
   let prevBox = null;
   const anchor = hint ? { x: hint.x * W, y: hint.y * H } : null;
-  const minS = Math.max(96, Math.min(W, H) * 0.08);
+  const minS = Math.max(96, Math.min(W, H) * strat.minCrop);
   const maxS = Math.max(W, H);
   let processed = 0;
 
@@ -394,7 +406,7 @@ export async function processVideo(video, { landmarker, fps = 10, start = 0, end
       }
     }
     if (!pose && (!roi || lostFor % Math.max(1, Math.round(fps / 2)) === 0)) {
-      const people = await searchFrame(landmarker, video, ctx, W, H);
+      const people = await searchFrame(landmarker, video, ctx, W, H, strat.tiles);
       pose = choose(people, last || anchor);
       // After losing the climber for a while, don't jump to someone far away.
       if (pose && last && roi) {
@@ -465,7 +477,7 @@ export async function processVideo(video, { landmarker, fps = 10, start = 0, end
     let b = k + 1; while (b < total && !frames[b].p) b++;
     if (a >= 0 && b < total && b - a - 1 <= Math.round(fps * 1.5)) gaps.push({ k, a, b });
   }
-  const budget = Math.max(30, Math.round(total * 0.25));
+  const budget = Math.max(strat.retryMin, Math.round(total * strat.retryShare));
   const todo = gaps.slice(0, budget);
   let g = 0;
   for (const { k, a, b } of todo) {

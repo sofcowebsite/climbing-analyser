@@ -83,7 +83,9 @@ export async function requestPersistence() {
 
 const SETTINGS_KEY = 'crux-coach-settings';
 // 12 frames per second: faster frame capture made the extra accuracy affordable.
-export const DEFAULT_SETTINGS = { quality: 'accurate', preferCpu: false, fps: 12, heightCm: null, units: 'metric', settingsVersion: 2 };
+// venue: where videos are usually filmed (changes how the climber is searched for and some tips).
+// theme: 'auto' follows the phone; 'light' / 'dark' force one.
+export const DEFAULT_SETTINGS = { quality: 'accurate', preferCpu: false, fps: 12, heightCm: null, units: 'metric', venue: 'outdoor', theme: 'auto', settingsVersion: 2 };
 
 // Analysis quality presets: which pose model, and whether to run the mirrored second pass.
 export const QUALITY = {
