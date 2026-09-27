@@ -1,7 +1,7 @@
 // Renders one session's analysis report.
 
 import { lineChart, scoreBars } from './charts.js';
-import { scoreLabel, scoreStatus, METRIC_DEFS } from './coach.js';
+import { scoreLabel, scoreStatus } from './coach.js';
 import { GRADE_SCALES } from './grades.js';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -45,17 +45,38 @@ function ring(score) {
   return wrap;
 }
 
+const RATING = {
+  clean: { label: 'Clean', status: 'good' },
+  ok: { label: '1 thing to fix', status: 'warning' },
+  rough: { label: 'Needs work', status: 'critical' },
+};
+
+function card(title, ...children) {
+  return h('div', { class: 'card' }, title ? h('h3', { text: title }) : null, ...children);
+}
+
+function labelled(label, text, cls = '') {
+  if (!text) return null;
+  return h('p', { class: `labelled ${cls}` }, h('strong', { text: `${label} ` }), text);
+}
+
 /**
- * opts: { heightCm, onSeek(t) | null, extra: Node (inserted after header) }
+ * opts: { heightCm, onSeek(t) | null, extra: Node (inserted after header), history: [sessions] }
  */
 export function renderReport(container, session, opts = {}) {
   container.replaceChildren();
-  const { analysis: a, report: r } = session;
+  const a = session.analysis;
+  const r = session.report;
   const m = a.metrics;
   const heightCm = opts.heightCm;
   const canSeek = typeof opts.onSeek === 'function';
+  const seekBtn = (t, label) => {
+    const b = h('button', { type: 'button', class: 'linkish', text: label || fmtTime(t, true) });
+    if (canSeek) b.addEventListener('click', () => opts.onSeek(t)); else b.disabled = true;
+    return b;
+  };
 
-  // Header
+  // ----- header -----
   const pills = [TYPE_LABELS[session.type] || 'Climb'];
   if (session.grade) pills.push(session.grade);
   if (session.outcome) pills.push(OUTCOME_LABELS[session.outcome]);
@@ -72,60 +93,192 @@ export function renderReport(container, session, opts = {}) {
     h('p', { class: 'summary', style: 'margin-top:12px', text: r.summary }),
     session.notes ? h('p', { class: 'muted small', text: `Notes: ${session.notes}` }) : null,
   ));
-
   if (opts.extra) container.append(opts.extra);
-
   if (a.warnings?.length) {
     container.append(h('div', { class: 'card warn' }, h('h3', { text: 'Heads up' }), a.warnings.map((w) => h('p', { text: w }))));
   }
 
-  // Quick stats
+  // ----- action plan -----
+  if (r.actionPlan?.length) {
+    container.append(card('Your plan for next session',
+      h('p', { class: 'muted small', text: 'The three changes that would help you most, in priority order.' }),
+      h('ol', { class: 'plan' }, r.actionPlan.map((p) => h('li', {},
+        h('h4', { text: p.title }),
+        labelled('What we saw:', p.saw),
+        labelled('Why it matters:', p.why),
+        labelled('Next time:', p.doThis, 'cue'),
+        p.drill ? h('div', { class: 'drill', text: p.drill }) : null,
+        p.target ? h('p', { class: 'target' }, h('span', { text: '🎯 Target: ' }), p.target) : null,
+        p.moves?.length && canSeek ? h('div', { class: 'jump-row' }, h('span', { class: 'muted small', text: 'Watch: ' }), p.moves.slice(0, 6).map((n) => {
+          const mv = a.moves.find((x) => x.n === n);
+          return mv ? seekBtn(mv.t0 - 1, `move #${n}`) : null;
+        })) : null,
+      ))),
+    ));
+  } else if (r.strengths?.length || r.improvements?.length) {
+    container.append(card('Your plan for next session', h('p', { class: 'muted', text: 'Nothing stood out as a clear weakness on this climb. Check the detailed breakdown below.' })));
+  }
+
+  // ----- quick stats -----
   const metres = torsoToMetres(m.heightGain, heightCm);
-  const tiles = h('div', { class: 'tiles' },
+  container.append(h('div', { class: 'tiles' },
     tile('Climb time', fmtTime(m.climbTime), `${Math.round((1 - (m.pausedShare || 0)) * 100)}% moving`),
     tile('Height gained', `≈${metres.toFixed(1)} m`, heightCm ? 'based on your height' : 'set your height in Guide'),
     tile('Hand moves', String(m.handMoves), isNum(m.movesPerMin) ? `${m.movesPerMin.toFixed(1)} per min` : ''),
     tile('Foot moves', String(m.footMoves), isNum(m.footHandRatio) ? `${m.footHandRatio.toFixed(1)} per hand move` : ''),
-  );
-  container.append(tiles);
+  ));
 
-  // Category scores
+  // ----- scores -----
   const bars = h('div');
-  container.append(h('div', { class: 'card' }, h('h3', { text: 'Technique scores' }), bars));
-  scoreBars(bars, Object.values(r.categories).map((c) => ({
-    label: c.label, value: c.score, status: scoreStatus(c.score), statusLabel: scoreLabel(c.score), note: c.blurb,
-  })));
+  container.append(card('Technique scores', bars));
+  scoreBars(bars, Object.values(r.categories).map((c) => ({ label: c.label, value: c.score, status: scoreStatus(c.score), statusLabel: scoreLabel(c.score), note: c.blurb })));
 
-  // Strengths & improvements
-  if (r.strengths.length) {
-    container.append(h('div', { class: 'card' },
-      h('h3', { text: '✓ What you did well' }),
+  // ----- what went well -----
+  if (r.strengths?.length) {
+    container.append(card('✓ What you did well',
       h('ul', { class: 'feedback' }, r.strengths.map((s) => h('li', {},
         h('h4', {}, h('span', { text: s.label }), h('span', { class: 'status status-good', text: String(s.score) })),
         h('p', { text: s.text }),
       ))),
     ));
   }
-  if (r.improvements.length) {
-    container.append(h('div', { class: 'card' },
-      h('h3', { text: '↗ What to work on' }),
-      h('ul', { class: 'feedback' }, r.improvements.map((s) => h('li', {},
-        h('h4', {}, h('span', { text: s.label }), h('span', { class: `status status-${scoreStatus(s.score)}`, text: String(s.score) })),
-        h('p', { text: s.text }),
-        h('div', { class: 'drill', text: s.drill }),
-      ))),
+
+  // ----- move by move -----
+  if (r.moveReview?.length) {
+    const listEl = h('ul', { class: 'moves' });
+    const renderMoves = (all) => {
+      listEl.replaceChildren(...r.moveReview.slice(0, all ? undefined : 6).map((mv) => {
+        const rt = RATING[mv.rating];
+        return h('li', { class: `move move-${mv.rating}` },
+          h('div', { class: 'move-head' },
+            h('strong', { text: `#${mv.n} · ${mv.side === 'left' ? 'Left' : 'Right'} hand` }),
+            seekBtn(Math.max(0, mv.t0 - 1)),
+            h('span', { class: `status status-${rt.status}`, text: rt.label }),
+          ),
+          mv.good.length ? h('ul', { class: 'ticks good' }, mv.good.map((g) => h('li', { text: g }))) : null,
+          mv.bad.length ? h('ul', { class: 'ticks bad' }, mv.bad.map((g) => h('li', { text: g }))) : null,
+          mv.info.length ? h('p', { class: 'muted small', text: mv.info.join(' · ') }) : null,
+        );
+      }));
+    };
+    renderMoves(false);
+    const more = r.moveReview.length > 6
+      ? h('button', { type: 'button', class: 'btn btn-block btn-small', text: `Show all ${r.moveReview.length} moves`, onclick: (e) => { renderMoves(true); e.target.remove(); } })
+      : null;
+    container.append(card('Move by move',
+      h('p', { class: 'small', text: r.moveSummary }),
+      canSeek ? h('p', { class: 'muted small', text: 'Tap a time to watch that move (starts 1 s before).' }) : h('p', { class: 'muted small', text: 'Attach the video above to watch each move.' }),
+      listEl, more,
     ));
   }
-  if (!r.strengths.length && !r.improvements.length) {
-    container.append(h('div', { class: 'card' }, h('p', { class: 'muted', text: 'No strong signals either way on this climb. Everything sits in the middle range. Check the details below.' })));
-  }
-  if (r.notes.length) {
-    container.append(h('div', { class: 'card' }, h('h3', { text: 'Other observations' }), h('ul', {}, r.notes.map((n) => h('li', { text: n })))));
+
+  // ----- start / middle / top -----
+  if (a.sections?.length === 3) {
+    const row = (label, f) => h('tr', {}, h('td', { text: label }), a.sections.map((s) => h('td', { class: 'num', text: f(s) })));
+    const pctOr = (v) => (isNum(v) ? `${Math.round(v * 100)}%` : '—');
+    container.append(card('How the climb went: start, middle and top',
+      h('div', { class: 'table-wrap' }, h('table', { class: 'data' },
+        h('thead', {}, h('tr', {}, h('th', { text: '' }), a.sections.map((s) => h('th', { class: 'num', text: s.name })))),
+        h('tbody', {},
+          row('Hand moves', (s) => String(s.moves)),
+          row('Seconds per move', (s) => (isNum(s.setup) ? s.setup.toFixed(1) : '—')),
+          row('Straight arms', (s) => pctOr(s.straightArm)),
+          row('Feet first', (s) => pctOr(s.feetFirst)),
+          row('Jolts', (s) => String(s.jolts)),
+          row('Hesitations', (s) => String(s.hesitations)),
+        ),
+      )),
+      r.sectionInsights.map((x) => h('div', { class: 'insight' }, h('h4', { text: x.title }), h('p', { text: x.text }), x.advice ? labelled('Next time:', x.advice, 'cue') : null)),
+    ));
   }
 
-  // Timeline chart
+  // ----- left vs right -----
+  if (a.sides) {
+    const sd = a.sides;
+    const armTxt = (x) => (x ? `${Math.round(x.bent * 100)}%` : '—');
+    container.append(card('Left vs right',
+      h('div', { class: 'table-wrap' }, h('table', { class: 'data' },
+        h('thead', {}, h('tr', {}, h('th', { text: '' }), h('th', { class: 'num', text: 'Left' }), h('th', { class: 'num', text: 'Right' }))),
+        h('tbody', {},
+          h('tr', {}, h('td', { text: 'Hand moves' }), h('td', { class: 'num', text: String(sd.handMoves.left) }), h('td', { class: 'num', text: String(sd.handMoves.right) })),
+          h('tr', {}, h('td', { text: 'Foot moves' }), h('td', { class: 'num', text: String(sd.footMoves.left) }), h('td', { class: 'num', text: String(sd.footMoves.right) })),
+          h('tr', {}, h('td', { text: 'High steps' }), h('td', { class: 'num', text: String(sd.highSteps.left) }), h('td', { class: 'num', text: String(sd.highSteps.right) })),
+          h('tr', {}, h('td', { text: 'Arm bent when still' }), h('td', { class: 'num', text: armTxt(sd.arms.left) }), h('td', { class: 'num', text: armTxt(sd.arms.right) })),
+        ),
+      )),
+      r.sideInsights.map((x) => h('div', { class: 'insight' }, h('h4', { text: x.title }), h('p', { text: x.text }), x.advice ? labelled('Next time:', x.advice, 'cue') : null)),
+    ));
+  }
+
+  // ----- detailed breakdown per area -----
+  for (const [key, cat] of Object.entries(r.categories)) {
+    const its = r.items.filter((i) => i.category === key && isNum(i.value));
+    if (!its.length) continue;
+    container.append(h('div', { class: 'card' },
+      h('div', { class: 'bar-head' }, h('h3', { text: cat.label }), h('span', { class: `status status-${scoreStatus(cat.score)}`, text: isNum(cat.score) ? `${cat.score} · ${scoreLabel(cat.score)}` : '' })),
+      h('p', { class: 'muted small', text: cat.blurb }),
+      its.map((it) => {
+        const d = h('details', { class: 'metric' },
+          h('summary', {},
+            h('span', { class: 'metric-name', text: it.label }),
+            h('span', { class: 'metric-val', text: it.display }),
+            h('span', { class: `status status-${it.info ? 'none' : scoreStatus(it.score)}`, text: it.info ? 'info' : String(it.score) }),
+          ),
+          h('p', { class: 'muted small', text: it.what }),
+          it.text ? h('p', { text: it.text + (it.moves?.length && !isNum(it.score) ? '' : '') }) : null,
+          it.moves?.length && isNum(it.score) && it.score < 65 ? h('p', { class: 'small', text: `Seen on move${it.moves.length > 1 ? 's' : ''} ${it.moves.map((n) => `#${n}`).join(', ')}.` }) : null,
+          labelled('Why it matters:', it.why),
+          labelled('Next time:', it.cue, 'cue'),
+          h('div', { class: 'drill', text: it.drill }),
+          it.target && (it.info || it.score < 80) ? h('p', { class: 'target' }, h('span', { text: '🎯 Target: ' }), it.target) : null,
+        );
+        if (!it.info && isNum(it.score) && it.score < 65) d.open = true;
+        return d;
+      }),
+    ));
+  }
+
+  // ----- other observations -----
+  const obs = [...(r.extraInsights || []).map((x) => h('div', { class: 'insight' }, h('h4', { text: x.title }), h('p', { text: x.text }), x.advice ? labelled('Tip:', x.advice, 'cue') : null)),
+    ...r.notes.map((n) => h('div', { class: 'insight' }, h('p', { text: n })))];
+  if (obs.length) container.append(card('Other observations', obs));
+
+  // ----- compared with previous climbs -----
+  const hist = (opts.history || []).filter((x) => x.id !== session.id && x.createdAt < session.createdAt && x.report);
+  if (hist.length) {
+    const avg = (f) => { const v = hist.map(f).filter(isNum); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+    const rows = [['Overall', r.overall, avg((x) => x.report.overall)],
+      ...Object.entries(r.categories).map(([k, c]) => [c.label, c.score, avg((x) => x.report.categories?.[k]?.score)])];
+    const prev = [...hist].sort((x, y) => y.createdAt - x.createdAt)[0];
+    const lastFocus = prev.report.actionPlan?.[0] || prev.report.improvements?.[0];
+    let focusText = null;
+    if (lastFocus) {
+      const key = lastFocus.key || prev.report.improvements?.find((i) => i.label === lastFocus.title)?.key;
+      const before = prev.report.items?.find((i) => i.key === key)?.score;
+      const now = r.items.find((i) => i.key === key)?.score;
+      const title = lastFocus.title || lastFocus.label;
+      if (isNum(before) && isNum(now)) {
+        const d = now - before;
+        focusText = `Last time your top focus was "${title}" (score ${before}). This climb: ${now} (${d > 0 ? '+' : ''}${d}). ${d >= 10 ? 'Great progress, keep it up!' : d > -5 ? 'About the same, so keep drilling it.' : 'It slipped this time. Give it extra attention on your warm-up climbs.'}`;
+      }
+    }
+    container.append(card(`Compared with your previous ${hist.length === 1 ? 'climb' : `${hist.length} climbs`}`,
+      focusText ? h('p', { text: focusText }) : null,
+      h('div', { class: 'table-wrap' }, h('table', { class: 'data' },
+        h('thead', {}, h('tr', {}, h('th', { text: '' }), h('th', { class: 'num', text: 'This climb' }), h('th', { class: 'num', text: 'Your average' }), h('th', { class: 'num', text: 'Change' }))),
+        h('tbody', {}, rows.map(([label, now, av]) => h('tr', {},
+          h('td', { text: label }),
+          h('td', { class: 'num', text: isNum(now) ? String(now) : '—' }),
+          h('td', { class: 'num', text: isNum(av) ? String(Math.round(av)) : '—' }),
+          h('td', { class: 'num', text: isNum(now) && isNum(av) ? `${now - av >= 0 ? '▲ +' : '▼ '}${Math.round(now - av)}` : '—' }),
+        ))),
+      )),
+    ));
+  }
+
+  // ----- timeline chart -----
   const chartBox = h('div');
-  const timelineCard = h('div', { class: 'card' },
+  container.append(h('div', { class: 'card' },
     h('h3', { text: 'Height over time' }),
     h('p', { class: 'muted small', text: canSeek ? 'Tap the chart to jump to that moment in the video.' : 'How high your body was during the climb. Shaded areas are pauses.' }),
     chartBox,
@@ -135,8 +288,7 @@ export function renderReport(container, session, opts = {}) {
       h('span', {}, h('i', { class: 'k-rest' }), 'Rest (4 s+)'),
       h('span', {}, h('i', { class: 'k-marker' }), 'Key moment'),
     ),
-  );
-  container.append(timelineCard);
+  ));
   const s = a.series;
   const toM = (v) => torsoToMetres(v, heightCm);
   requestAnimationFrame(() => lineChart(chartBox, {
@@ -150,6 +302,8 @@ export function renderReport(container, session, opts = {}) {
     tipRows: (i) => {
       const rows = [{ value: isNum(s.height[i]) ? `${toM(s.height[i]).toFixed(1)} m` : '—', label: 'height', key: 'k-line' }];
       if (isNum(s.speed[i])) rows.push({ value: `${toM(s.speed[i]).toFixed(2)} m/s`, label: 'body speed' });
+      const mv = (a.moves || []).find((x) => s.t[i] >= x.t0 - 0.2 && s.t[i] <= x.t1 + 0.2);
+      if (mv) rows.push({ value: `#${mv.n}`, label: `${mv.side} hand move` });
       const ev = a.events.find((e) => Math.abs(e.t - s.t[i]) < 0.35);
       if (ev) rows.push({ value: '•', label: ev.label });
       return rows;
@@ -159,38 +313,40 @@ export function renderReport(container, session, opts = {}) {
     height: 210,
   }));
 
-  // Key moments
+  // ----- key moments -----
   if (a.events.length) {
-    container.append(h('div', { class: 'card' },
-      h('h3', { text: 'Key moments' }),
+    container.append(card('Key moments',
       canSeek ? null : h('p', { class: 'muted small', text: 'Attach the video above to jump to these moments.' }),
       h('ul', { class: 'moments' }, a.events.map((e) => eventItem(e, canSeek, opts.onSeek))),
     ));
   }
 
-  // Full data table
-  const rows = METRIC_DEFS.map((def) => {
-    const it = r.items.find((i) => i.key === def.key);
-    return h('tr', {},
-      h('td', {}, h('span', { text: def.label }), h('span', { class: 'what', text: def.what })),
-      h('td', { class: 'num', text: it.display }),
-      h('td', { class: 'num', text: isNum(it.score) ? String(it.score) : (it.info ? 'info' : '—') }),
-    );
-  });
+  // ----- all measurements -----
+  const rows = r.items.map((it) => h('tr', {},
+    h('td', {}, h('span', { text: it.label }), h('span', { class: 'what', text: it.what })),
+    h('td', { class: 'num', text: it.display }),
+    h('td', { class: 'num', text: isNum(it.score) ? String(it.score) : (it.info ? 'info' : '—') }),
+  ));
   const extra = [
     ['Time paused', isNum(m.pausedShare) ? `${Math.round(m.pausedShare * 100)}%` : '—'],
     ['Hesitations (1–4 s)', String(m.hesitations)],
     ['Rests (4 s+)', String(m.rests)],
+    ['Average time between moves', isNum(m.avgSetup) ? `${m.avgSetup.toFixed(1)} s` : '—'],
+    ['High steps', String(m.highSteps ?? '—')],
+    ['Feet cutting loose', String(m.feetCuts ?? '—')],
+    ['Shake-outs / chalk', String(m.shakeOuts ?? '—')],
+    ['Stance width', isNum(m.stanceWidth) ? `${m.stanceWidth.toFixed(1)} torso lengths` : '—'],
     ['Dynamic moves', String(m.dynos)],
     ['Body tracked', `${Math.round(m.trackedRatio * 100)}% of frames`],
+    ['Climber size in video', isNum(m.torsoPx) ? `${Math.round(m.torsoPx)} px torso` : '—'],
     ['Analysed', `${fmtTime(a.window.t0, true)} – ${fmtTime(a.window.t1, true)}`],
   ].map(([k, v]) => h('tr', {}, h('td', { text: k }), h('td', { class: 'num', text: v }), h('td')));
   container.append(h('details', { class: 'card' },
     h('summary', { text: 'All measurements' }),
-    h('table', { class: 'data' },
+    h('div', { class: 'table-wrap' }, h('table', { class: 'data' },
       h('thead', {}, h('tr', {}, h('th', { text: 'Measure' }), h('th', { class: 'num', text: 'Value' }), h('th', { class: 'num', text: 'Score' }))),
       h('tbody', {}, rows, extra),
-    ),
+    )),
   ));
 }
 

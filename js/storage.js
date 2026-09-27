@@ -82,10 +82,22 @@ export async function requestPersistence() {
 }
 
 const SETTINGS_KEY = 'crux-coach-settings';
-export const DEFAULT_SETTINGS = { model: 'full', preferCpu: false, fps: 10, heightCm: null, units: 'metric' };
+export const DEFAULT_SETTINGS = { quality: 'accurate', preferCpu: false, fps: 10, heightCm: null, units: 'metric' };
+
+// Analysis quality presets: which pose model, and whether to run the mirrored second pass.
+export const QUALITY = {
+  fast: { model: 'lite', twoPass: false },
+  accurate: { model: 'full', twoPass: true },
+  max: { model: 'heavy', twoPass: true },
+};
 
 export function loadSettings() {
-  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; }
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    // Older versions stored a model name instead of a quality preset.
+    if (!saved.quality && saved.model) saved.quality = saved.model === 'lite' ? 'fast' : 'accurate';
+    return { ...DEFAULT_SETTINGS, ...saved };
+  }
   catch { return { ...DEFAULT_SETTINGS }; }
 }
 

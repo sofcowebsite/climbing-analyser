@@ -17,6 +17,9 @@ export const LM = {
   lToe: 31, rToe: 32,
 };
 
+// Bumped when the analysis changes; older saved sessions are re-analysed from their stored poses.
+export const ANALYSIS_VERSION = 3;
+
 // Landmarks kept when a session is stored (enough to redraw the skeleton).
 export const KEPT_LANDMARKS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
 
@@ -30,8 +33,6 @@ const LIMB_POINTS = {
 export const CFG = {
   minCoreVis: 0.5,
   minPointVis: 0.35,
-  maxGapSec: 0.7,
-  smoothSec: 0.3,
   stillRadius: 0.08, stillWindowSec: 0.4, stillHoldSec: 0.3,
   // Hand moves are usually bigger than foot moves; a 15 cm foot step is a real move.
   handMoveDist: 0.4, footMoveDist: 0.25, handAdjustDist: 0.12, footAdjustDist: 0.08,
@@ -46,6 +47,10 @@ export const CFG = {
   fallSpeed: 2.5, fallDrop: 1.2,
   turnedRatio: 0.65,
 };
+
+import { refinePoses, fixLeftRight } from './refine.js';
+
+export { fixLeftRight };
 
 // ---------- small helpers ----------
 
@@ -134,64 +139,11 @@ function runs(n, pred) {
 
 // ---------- preprocessing ----------
 
-// Left/right pairs by body part. Pose models often mix up left and right, especially from
-// behind or far away, which would look like a hand or foot teleporting across the body.
-const LR_GROUPS = {
-  arms: [[11, 12], [13, 14], [15, 16]], // finger points are too noisy on small figures
-  legs: [[23, 24], [25, 26], [27, 28], [29, 30], [31, 32]],
-};
-
-// Keeps left/right labels consistent over time: for each frame and body part, swap the
-// sides if that matches the previous frame better. Returns new frames (input untouched).
-export function fixLeftRight(frames) {
-  const out = [];
-  let prev = null;
-  for (const f of frames) {
-    if (!f.p) { out.push(f); continue; }
-    const p = f.p.map((q) => q.slice());
-    if (prev) {
-      for (const pairs of Object.values(LR_GROUPS)) {
-        let keep = 0, swap = 0, n = 0;
-        for (const [l, r] of pairs) {
-          if (Math.min(p[l][2], p[r][2], prev[l][2], prev[r][2]) < 0.2) continue;
-          keep += dist(p[l], prev[l]) + dist(p[r], prev[r]);
-          swap += dist(p[l], prev[r]) + dist(p[r], prev[l]);
-          n++;
-        }
-        if (n && swap < keep * 0.8) for (const [l, r] of pairs) [p[l], p[r]] = [p[r], p[l]];
-      }
-    }
-    prev = p;
-    out.push({ ...f, p });
-  }
-  return out;
-}
-
-// Builds smoothed per-landmark tracks: tracks[idx] = { x: [], y: [] } (NaN where unknown).
-// Coordinates are converted to "wall" coordinates by removing camera movement (frame.cam),
-// so a camera that pans to follow the climber doesn't hide their progress.
-function buildTracks(frames, dt, smoothSec) {
-  const n = frames.length;
-  const coreOk = frames.map((f) => !!f.p && mean(CORE.map((i) => f.p[i][2])) >= CFG.minCoreVis);
-  const maxGap = Math.max(1, Math.round(CFG.maxGapSec / dt));
-  const win = Math.max(1, Math.round(smoothSec / dt) | 1);
-  // Camera pans are smooth; smoothing the estimate removes its small step-like jitter.
-  const camWin = Math.max(1, Math.round(0.8 / dt) | 1);
-  const camX = smooth(frames.map((f) => (f.cam ? f.cam[0] : 0)), camWin);
-  const camY = smooth(frames.map((f) => (f.cam ? f.cam[1] : 0)), camWin);
-  const tracks = {};
-  const needed = new Set([...KEPT_LANDMARKS]);
-  for (const idx of needed) {
-    const xs = new Array(n), ys = new Array(n);
-    for (let i = 0; i < n; i++) {
-      const p = frames[i].p;
-      const ok = coreOk[i] && p[idx][2] >= (CORE.includes(idx) ? 0 : CFG.minPointVis);
-      xs[i] = ok ? p[idx][0] - camX[i] : NaN;
-      ys[i] = ok ? p[idx][1] - camY[i] : NaN;
-    }
-    tracks[idx] = { x: smooth(fillGaps(xs, maxGap), win), y: smooth(fillGaps(ys, maxGap), win) };
-  }
-  return { tracks, coreOk };
+// Builds per-landmark tracks in wall coordinates from the refined poses (see refine.js):
+// tracks[idx] = { x: [], y: [], conf: [] } (NaN where unknown).
+function buildTracks(frames) {
+  const r = refinePoses(frames);
+  return { tracks: r.world, coreOk: r.coreOk, refined: r.frames };
 }
 
 const pt = (tracks, idx, i) => [tracks[idx].x[i], tracks[idx].y[i]];
@@ -209,7 +161,7 @@ function limbPoint(tracks, key, i) {
 // A limb is "still" (on a hold) when it stays inside a small radius for a short window.
 // The radius adapts to the measured landmark jitter, which is much larger for far-away
 // climbers. Each gap between two holds is classified by the distance between them.
-function segmentLimb(xs, ys, times, dt, T, isHand) {
+function segmentLimb(xs, ys, times, dt, T, isHand, seen) {
   const n = xs.length;
   const vx = derivative(xs, dt), vy = derivative(ys, dt);
   const speed = vx.map((v, i) => (isNum(v) && isNum(vy[i]) ? Math.hypot(v, vy[i]) / T : NaN));
@@ -238,7 +190,8 @@ function segmentLimb(xs, ys, times, dt, T, isHand) {
     for (let k = Math.max(0, i - h); k <= Math.min(n - 1, i + h); k++) {
       if (isNum(xs[k])) spread = Math.max(spread, Math.hypot(xs[k] - mx, ys[k] - my) / T);
     }
-    still[i] = spread < stillR;
+    // Hidden stretches are estimated, so they can't prove the limb was on a hold.
+    still[i] = spread < stillR && (!seen || seen[i]);
   }
   // Only still runs long enough to count as "on a hold".
   const holds = runs(n, (i) => still[i]).filter((r) => r.e - r.s + 1 >= stillN);
@@ -273,9 +226,8 @@ function countReadjust(moves, adjustments, windowSec = 2.5) {
 
 // ---------- main entry ----------
 
-export function analyze(rawFrames, opts = {}) {
+export function analyze(frames, opts = {}) {
   const warnings = [];
-  const frames = fixLeftRight(rawFrames);
   const n = frames.length;
   if (n < 10) return { ok: false, reason: 'Video too short to analyse.' };
 
@@ -283,12 +235,13 @@ export function analyze(rawFrames, opts = {}) {
   const dt = (times[n - 1] - times[0]) / (n - 1) || 0.1;
   const detected = frames.filter((f) => f.p).length / n;
 
-  // Rough body size before smoothing. Small, far-away climbers get noisier landmarks, so smooth more.
+  // Rough body size in pixels: small, far-away climbers get noisier landmarks.
   const rawTorso = median(frames.map((f) => (f.p && mean(CORE.map((i) => f.p[i][2])) >= CFG.minCoreVis
     ? dist(mid(f.p[LM.lShoulder], f.p[LM.rShoulder]), mid(f.p[LM.lHip], f.p[LM.rHip])) : NaN)));
   const torsoPx = isNum(rawTorso) && opts.frameHeightPx ? rawTorso * opts.frameHeightPx : null;
-  const smoothSec = torsoPx === null ? CFG.smoothSec : torsoPx < 30 ? 0.6 : torsoPx < 60 ? 0.45 : CFG.smoothSec;
-  const { tracks, coreOk } = buildTracks(frames, dt, smoothSec);
+  if (n < 10 || !frames.some((f) => f.p)) return { ok: false, reason: 'Could not find the climber in enough of the video. Try tapping on the climber before analysing, trimming to just the climb, or filming in 4K / closer.', detected };
+  const { tracks, coreOk } = buildTracks(frames);
+  if (!tracks) return { ok: false, reason: 'Could not find the climber in enough of the video. Try tapping on the climber before analysing, trimming to just the climb, or filming in 4K / closer.', detected };
 
   // Body scale: median torso length (shoulder mid to hip mid).
   const torso = [], shoulderW = [];
@@ -377,13 +330,16 @@ export function analyze(rawFrames, opts = {}) {
   // ----- limb events -----
   const limbs = {};
   for (const key of Object.keys(LIMB_POINTS)) {
-    const xs = [], ys = [];
+    const xs = [], ys = [], seenMask = [];
     for (let i = 0; i < n; i++) {
       const p = inW(i) ? limbPoint(tracks, key, i) : [NaN, NaN];
       xs.push(p[0]); ys.push(p[1]);
+      // Hands are rarely hidden for long; a looser bar avoids splitting holds on small figures.
+      seenMask.push(Math.max(...LIMB_POINTS[key].map((idx) => tracks[idx].conf[i])) >= (key.endsWith('Hand') ? 0.2 : CFG.minPointVis));
     }
-    const visible = xs.filter(isNum).length / Math.max(1, wEnd - wStart + 1);
-    limbs[key] = { ...segmentLimb(xs, ys, times, dt, T, key.endsWith('Hand')), visible, xs, ys };
+    // Share of the climb where this limb was clearly seen (not just estimated).
+    const visible = seenMask.filter((v, i) => v && inW(i)).length / Math.max(1, wEnd - wStart + 1);
+    limbs[key] = { ...segmentLimb(xs, ys, times, dt, T, key.endsWith('Hand'), seenMask), visible, xs, ys, seen: seenMask };
   }
   const handMoves = [...limbs.lHand.moves.map((m) => ({ ...m, side: 'left' })), ...limbs.rHand.moves.map((m) => ({ ...m, side: 'right' }))];
   const footMoves = [...limbs.lFoot.moves.map((m) => ({ ...m, side: 'left' })), ...limbs.rFoot.moves.map((m) => ({ ...m, side: 'right' }))];
@@ -522,6 +478,13 @@ export function analyze(rawFrames, opts = {}) {
     torsoPx,
   };
 
+  // ----- detailed breakdown: every hand move, sections of the climb, left vs right -----
+  const detail = detailedBreakdown({
+    times, dt, T, n, wStart, wEnd, inW, limbs, comX, vY, speed, elbow, knee, tracks, height,
+    jerky, pauses, handAdjustAllowed: !tooSmallForFine, handMoves, footMoves,
+  });
+  Object.assign(metrics, detail.summary);
+
   // ----- key moments -----
   const events = [];
   for (const f of falls) events.push({ t: f.t, kind: 'fall', label: 'Fall or drop' });
@@ -551,6 +514,10 @@ export function analyze(rawFrames, opts = {}) {
   return {
     ok: true,
     torso: T,
+    moves: detail.moves,
+    sections: detail.sections,
+    sides: detail.sides,
+    extras: detail.extras,
     window: { t0: times[wStart], t1: times[wEnd] },
     metrics,
     pauses: pauses.map(({ t0, t1, dur, type, elbow: e }) => ({ t0, t1, dur, type, elbow: isNum(e) ? Math.round(e) : null })),
@@ -567,3 +534,161 @@ function handAboveShoulder(tracks, side, i, T) {
 }
 
 const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
+
+// ---------- detailed breakdown ----------
+
+const sideKey = (side) => (side === 'left' ? 'l' : 'r');
+const other = (side) => (side === 'left' ? 'right' : 'left');
+
+function detailedBreakdown(c) {
+  const { times, dt, T, n, wStart, wEnd, inW, limbs, comX, vY, speed, elbow, knee, tracks, height, jerky, pauses } = c;
+  const idxAt = (t) => Math.max(0, Math.min(n - 1, Math.round((t - times[0]) / dt)));
+  const hands = [...c.handMoves].sort((a, b) => a.t0 - b.t0);
+  const feet = [...c.footMoves].sort((a, b) => a.t0 - b.t0);
+
+  // Feet cutting loose: both feet moving fast at the same time while a hand holds on.
+  const feetCuts = [];
+  {
+    const fast = (key, i) => isNum(limbs[key].speed[i]) && limbs[key].speed[i] > 1.3 && !limbs[key].still[i];
+    const r = runs(n, (i) => inW(i) && fast('lFoot', i) && fast('rFoot', i) && (limbs.lHand.still[i] || limbs.rHand.still[i]));
+    for (const x of r) if (x.e - x.s + 1 >= Math.max(2, Math.round(0.2 / dt))) feetCuts.push({ t: times[x.s] });
+  }
+
+  // Shake-outs / chalking: a hand dropped below the hips for a while, off the ground.
+  const shakeOuts = [];
+  for (const side of ['l', 'r']) {
+    const w = side === 'l' ? LM.lWrist : LM.rWrist;
+    const r = runs(n, (i) => inW(i) && isNum(height[i]) && height[i] > 0.6 &&
+      isNum(tracks[w].y[i]) && isNum(tracks[LM.lHip].y[i]) && tracks[w].y[i] > (tracks[LM.lHip].y[i] + tracks[LM.rHip].y[i]) / 2);
+    for (const x of r) {
+      const dur = times[x.e] - times[x.s];
+      if (dur >= 0.6) shakeOuts.push({ t: times[x.s], dur, side: side === 'l' ? 'left' : 'right' });
+    }
+  }
+  shakeOuts.sort((a, b) => a.t - b.t);
+
+  // High steps: a foot lifted a long way, or placed above the other knee.
+  const highSteps = feet.filter((m) => {
+    if (m.up >= 0.7) return true;
+    const i = idxAt(m.t1);
+    const otherKnee = m.side === 'left' ? LM.rKnee : LM.lKnee;
+    const fy = limbs[m.side === 'left' ? 'lFoot' : 'rFoot'].ys[i];
+    return m.up > 0.3 && isNum(fy) && isNum(tracks[otherKnee].y[i]) && fy < tracks[otherKnee].y[i];
+  });
+
+  // Stance width when both feet are planted.
+  const widths = [];
+  for (let i = wStart; i <= wEnd; i++) {
+    if (limbs.lFoot.still[i] && limbs.rFoot.still[i] && isNum(limbs.lFoot.xs[i]) && isNum(limbs.rFoot.xs[i])) {
+      widths.push(Math.abs(limbs.lFoot.xs[i] - limbs.rFoot.xs[i]) / T);
+    }
+  }
+  const stanceWidth = widths.length >= 5 ? median(widths) : null;
+
+  // ----- per hand move -----
+  const moves = [];
+  let prevArrive = times[wStart];
+  hands.forEach((m, k) => {
+    const i0 = idxAt(m.t0), i1 = idxAt(m.t1);
+    const holdSide = other(m.side), hk = sideKey(holdSide);
+    const setup = Math.max(0, m.t0 - prevArrive);
+    const feetBefore = feet.filter((f) => f.t1 >= prevArrive - 0.2 && f.t1 <= m.t0 + 0.15);
+    // Holding arm during the reach (only while that hand is on its hold).
+    const holdAngles = [];
+    for (let i = i0; i <= i1; i++) if (limbs[holdSide === 'left' ? 'lHand' : 'rHand'].still[i] && isNum(elbow[hk][i]) && elbow[hk][i] >= CFG.minElbow) holdAngles.push(elbow[hk][i]);
+    const holdElbow = holdAngles.length ? median(holdAngles) : null;
+    // Hips over feet at launch.
+    const fx = [limbs.lFoot.xs[i0], limbs.rFoot.xs[i0]].filter(isNum);
+    const balance = fx.length && isNum(comX[i0]) ? Math.abs(comX[i0] - mean(fx)) / T : null;
+    // Legs vs arms while the body rises into the move.
+    let leg = 0, arm = 0;
+    for (let i = Math.max(wStart, i0 - Math.round(0.6 / dt)); i <= i1; i++) {
+      if (!(isNum(vY[i]) && vY[i] > CFG.upwardSpeed)) continue;
+      for (const s of ['l', 'r']) {
+        const kv = (knee[s][Math.min(n - 1, i + 1)] - knee[s][Math.max(0, i - 1)]) / (2 * dt);
+        const ev = (elbow[s][Math.min(n - 1, i + 1)] - elbow[s][Math.max(0, i - 1)]) / (2 * dt);
+        if (limbs[s + 'Foot'].still[i] && isNum(kv) && kv > 0) leg += kv;
+        if (limbs[s + 'Hand'].still[i] && isNum(ev) && ev < 0) arm += -ev;
+      }
+    }
+    const legShare = leg + arm > 60 ? leg / (leg + arm) : null;
+    let peakUp = 0;
+    for (let i = i0; i <= i1; i++) if (isNum(vY[i])) peakUp = Math.max(peakUp, vY[i]);
+    const dynamic = peakUp > CFG.dynoSpeed;
+    const jolt = jerky.some((j) => j.t >= m.t1 - 0.3 && j.t <= m.t1 + 0.8);
+    const handKey = m.side === 'left' ? 'lHand' : 'rHand';
+    const regrip = c.handAdjustAllowed
+      ? limbs[handKey].adjustments.some((a) => a.t0 >= m.t1 - 0.05 && a.t0 - m.t1 <= 2.5)
+      : null;
+    const cut = feetCuts.some((f) => f.t >= m.t0 - 0.2 && f.t <= m.t1 + 1);
+    const hesitated = pauses.some((p) => p.type === 'hesitation' && p.t1 >= prevArrive && p.t0 <= m.t0);
+    moves.push({
+      n: k + 1, t0: round(m.t0, 2), t1: round(m.t1, 2), side: m.side,
+      reach: round(m.dist, 2), up: round(m.up, 2), dur: round(m.t1 - m.t0, 2), setup: round(setup, 2),
+      feetBefore: feetBefore.length, feetUp: feetBefore.some((f) => f.up > 0.15),
+      holdElbow: isNum(holdElbow) ? Math.round(holdElbow) : null,
+      balance: isNum(balance) ? round(balance, 2) : null,
+      legShare: isNum(legShare) ? round(legShare, 2) : null,
+      dynamic, jolt, regrip, cut, hesitated,
+    });
+    prevArrive = m.t1;
+  });
+
+  // ----- sections: start / middle / top -----
+  const sections = [];
+  const span = times[wEnd] - times[wStart];
+  if (span > 6) {
+    for (let k = 0; k < 3; k++) {
+      const t0 = times[wStart] + (span * k) / 3, t1 = times[wStart] + (span * (k + 1)) / 3;
+      const a = idxAt(t0), b = idxAt(t1);
+      const ms = moves.filter((m) => m.t0 >= t0 && m.t0 < t1);
+      const staticArm = [];
+      for (let i = a; i <= b; i++) {
+        if (!(isNum(speed[i]) && speed[i] < CFG.staticSpeed)) continue;
+        for (const s of ['l', 'r']) if (limbs[s + 'Hand'].still[i] && isNum(elbow[s][i]) && elbow[s][i] >= CFG.minElbow) staticArm.push(elbow[s][i]);
+      }
+      const h0 = height[a], h1 = height[b];
+      sections.push({
+        name: ['Start', 'Middle', 'Top'][k], t0: round(t0, 2), t1: round(t1, 2),
+        moves: ms.length,
+        gain: isNum(h0) && isNum(h1) ? round(h1 - h0, 2) : null,
+        straightArm: staticArm.length >= 4 ? round(staticArm.filter((x) => x >= CFG.straightElbow).length / staticArm.length, 2) : null,
+        setup: ms.length ? round(mean(ms.map((m) => m.setup)), 2) : null,
+        feetFirst: ms.length ? round(ms.filter((m) => m.feetBefore > 0).length / ms.length, 2) : null,
+        jolts: jerky.filter((j) => j.t >= t0 && j.t < t1).length,
+        hesitations: pauses.filter((p) => p.type === 'hesitation' && p.t0 >= t0 && p.t0 < t1).length,
+      });
+    }
+  }
+
+  // ----- left vs right -----
+  const armStats = (s) => {
+    const a = [];
+    for (let i = wStart; i <= wEnd; i++) {
+      if (!(isNum(speed[i]) && speed[i] < CFG.staticSpeed)) continue;
+      if (limbs[s + 'Hand'].still[i] && isNum(elbow[s][i]) && elbow[s][i] >= CFG.minElbow) a.push(elbow[s][i]);
+    }
+    return a.length >= 4 ? { straight: round(a.filter((x) => x >= CFG.straightElbow).length / a.length, 2), bent: round(a.filter((x) => x < 110).length / a.length, 2) } : null;
+  };
+  const sides = {
+    handMoves: { left: hands.filter((m) => m.side === 'left').length, right: hands.filter((m) => m.side === 'right').length },
+    footMoves: { left: feet.filter((m) => m.side === 'left').length, right: feet.filter((m) => m.side === 'right').length },
+    highSteps: { left: highSteps.filter((m) => m.side === 'left').length, right: highSteps.filter((m) => m.side === 'right').length },
+    arms: { left: armStats('l'), right: armStats('r') },
+  };
+
+  const withFeet = moves.filter((m) => m.feetBefore > 0).length;
+  const summary = {
+    feetFirstRatio: moves.length >= 3 && limbs.lFoot.visible >= 0.3 ? withFeet / moves.length : null,
+    avgSetup: moves.length ? mean(moves.map((m) => m.setup)) : null,
+    controlledRatio: moves.length >= 3 ? moves.filter((m) => !m.jolt && !m.cut).length / moves.length : null,
+    feetCuts: feetCuts.length,
+    highSteps: highSteps.length,
+    shakeOuts: shakeOuts.length,
+    stanceWidth,
+  };
+  return {
+    moves, sections, sides, summary,
+    extras: { feetCuts, shakeOuts: shakeOuts.map((x) => ({ ...x, t: round(x.t, 2), dur: round(x.dur, 1) })), highSteps: highSteps.map((m) => ({ t: round(m.t0, 2), side: m.side })) },
+  };
+}

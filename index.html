@@ -150,8 +150,9 @@
         </label>
         <label class="field">Analysis quality
           <select id="set-model">
-            <option value="full">Accurate (recommended)</option>
-            <option value="lite">Fast</option>
+            <option value="accurate">Accurate (recommended)</option>
+            <option value="max">Maximum: best for hidden legs, about 3× slower</option>
+            <option value="fast">Fast: less accurate</option>
           </select>
         </label>
         <label class="field">Frames analysed per second
@@ -180,14 +181,14 @@
 
       <details class="card">
         <summary>How the analysis works</summary>
-        <p>Crux Coach runs Google's MediaPipe Pose model in your browser. It finds 33 body points (shoulders, elbows, wrists, hips, knees, ankles, toes) in about 10 frames per second of your video. It follows the climber with a zoomed-in crop, so far-away climbers are still big enough to track. It also measures camera movement from the rock around them. From those points it measures:</p>
+        <p>Crux Coach runs Google's MediaPipe Pose model in your browser. It finds 33 body points (shoulders, elbows, wrists, hips, knees, ankles, toes) in about 10 frames per second of your video. It follows the climber with a zoomed-in crop, so far-away climbers are still big enough to track. It also measures camera movement from the rock around them. Each frame is checked twice (normal and mirrored). Legs hidden behind your body are estimated from the frames around them and your body proportions, and they're drawn faded in the replay. From those points it measures:</p>
         <ul>
           <li><strong>Footwork:</strong> how often your feet move compared with your hands, and whether they stay put once placed.</li>
           <li><strong>Arm efficiency:</strong> elbow angle when you're holding still, and whether upward movement comes from straightening your knees or bending your elbows.</li>
           <li><strong>Body position:</strong> how far your centre of mass sits to the side of your feet, and how often you turn your hips into the wall.</li>
           <li><strong>Flow:</strong> how direct your body's path is, sudden jolts, hesitations and grip readjustments.</li>
         </ul>
-        <p>Each measurement is scored 0–100 against simple coaching rules, and then turned into feedback and drills.</p>
+        <p>Each measurement is scored 0–100 against coaching rules. It's then turned into a move-by-move review, a start/middle/top comparison, left vs. right, and a top-3 plan with drills and targets for your next session.</p>
       </details>
 
       <details class="card">

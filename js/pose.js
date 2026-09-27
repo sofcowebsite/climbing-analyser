@@ -6,6 +6,7 @@ import { gradientImage, createCameraTracker } from './camera.js';
 
 const WASM_PATH = new URL('../vendor/mediapipe/wasm', import.meta.url).href;
 const MODELS = {
+  heavy: new URL('../models/pose_landmarker_heavy.task', import.meta.url).href,
   full: new URL('../models/pose_landmarker_full.task', import.meta.url).href,
   lite: new URL('../models/pose_landmarker_lite.task', import.meta.url).href,
 };
@@ -66,9 +67,19 @@ function frameReady(video) {
 const CROP = 384;          // pixels the pose model sees for the tracked region
 const CORE_IDX = [11, 12, 23, 24];
 
+// MediaPipe landmark pairs that swap when the image is mirrored.
+const MIRROR_PAIRS = [[1, 4], [2, 5], [3, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16], [17, 18],
+  [19, 20], [21, 22], [23, 24], [25, 26], [27, 28], [29, 30], [31, 32]];
+const LR_GROUPS = [[[11, 12], [13, 14], [15, 16]], [[23, 24], [25, 26], [27, 28], [29, 30], [31, 32]]];
+
+let flipCanvas = null;
+
 // Runs pose detection on a square region of the source video frame.
 // Returns every pose found, mapped to source-pixel coordinates.
-function detectRegion(landmarker, video, ctx, W, H, x0, y0, S) {
+// With `twoPass`, the region is also analysed mirrored and the two results are combined:
+// the model makes different mistakes on a mirrored picture (especially on hidden legs),
+// so averaging them is more accurate, and where they disagree we know to trust it less.
+function detectRegion(landmarker, video, ctx, W, H, x0, y0, S, twoPass = false) {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, CROP, CROP);
   const sx0 = Math.max(0, x0), sy0 = Math.max(0, y0);
@@ -77,7 +88,50 @@ function detectRegion(landmarker, video, ctx, W, H, x0, y0, S) {
   const k = CROP / S;
   ctx.drawImage(video, sx0, sy0, sx1 - sx0, sy1 - sy0, (sx0 - x0) * k, (sy0 - y0) * k, (sx1 - sx0) * k, (sy1 - sy0) * k);
   const res = landmarker.detect(ctx.canvas);
-  return (res.landmarks || []).map((lm) => lm.map((q) => ({ x: x0 + q.x * S, y: y0 + q.y * S, v: q.visibility ?? 1 })));
+  const poses = (res.landmarks || []).map((lm) => lm.map((q) => ({ x: x0 + q.x * S, y: y0 + q.y * S, v: q.visibility ?? 1 })));
+  if (!twoPass || !poses.length) return poses;
+
+  if (!flipCanvas) { flipCanvas = document.createElement('canvas'); flipCanvas.width = flipCanvas.height = CROP; }
+  const fctx = flipCanvas.getContext('2d');
+  fctx.setTransform(-1, 0, 0, 1, CROP, 0);
+  fctx.drawImage(ctx.canvas, 0, 0);
+  fctx.setTransform(1, 0, 0, 1, 0, 0);
+  const mres = landmarker.detect(flipCanvas);
+  const mirrored = (mres.landmarks || []).map((lm) => {
+    const p = lm.map((q) => ({ x: x0 + (1 - q.x) * S, y: y0 + q.y * S, v: q.visibility ?? 1 }));
+    for (const [a, b] of MIRROR_PAIRS) [p[a], p[b]] = [p[b], p[a]];
+    return p;
+  });
+  return poses.map((p) => {
+    const box = poseBox(p);
+    const size = box ? Math.max(box.x1 - box.x0, box.y1 - box.y0) : S / 3;
+    const m = nearest(mirrored, hipCenter(p));
+    if (!m.pose || m.dist > size * 0.35) return p;
+    return fusePoses(p, m.pose, size);
+  });
+}
+
+// Confidence-weighted average of two estimates of the same pose.
+function fusePoses(a, b, size) {
+  b = b.slice();
+  // The two passes can disagree about left/right; align them first.
+  for (const pairs of LR_GROUPS) {
+    let keep = 0, swap = 0;
+    for (const [l, r] of pairs) {
+      keep += Math.hypot(a[l].x - b[l].x, a[l].y - b[l].y) + Math.hypot(a[r].x - b[r].x, a[r].y - b[r].y);
+      swap += Math.hypot(a[l].x - b[r].x, a[l].y - b[r].y) + Math.hypot(a[r].x - b[l].x, a[r].y - b[l].y);
+    }
+    if (swap < keep * 0.8) for (const [l, r] of pairs) [b[l], b[r]] = [b[r], b[l]];
+  }
+  return a.map((q, i) => {
+    const r = b[i];
+    const wa = Math.max(0.05, q.v), wb = Math.max(0.05, r.v);
+    const x = (q.x * wa + r.x * wb) / (wa + wb), y = (q.y * wa + r.y * wb) / (wa + wb);
+    const disagree = Math.hypot(q.x - r.x, q.y - r.y) / size;
+    // Agreement between the passes raises confidence; disagreement lowers it.
+    const v = Math.max(q.v, r.v) * (disagree > 0.12 ? 0.5 : disagree > 0.06 ? 0.8 : 1);
+    return { x, y, v };
+  });
 }
 
 function coreVis(pose) { return CORE_IDX.reduce((s, i) => s + pose[i].v, 0) / CORE_IDX.length; }
@@ -142,7 +196,7 @@ async function searchFrame(landmarker, video, ctx, W, H) {
  * onFrame(progress 0..1, pts|null, box|null) is called after each frame for live preview
  * (pts: [[x, y, v]] normalised 0..1; box: tracked region normalised 0..1).
  */
-export async function processVideo(video, { landmarker, fps = 10, start = 0, end = null, onFrame, signal, hint = null }) {
+export async function processVideo(video, { landmarker, fps = 10, start = 0, end = null, onFrame, signal, hint = null, twoPass = false }) {
   const duration = video.duration;
   const tEnd = Math.min(end ?? duration, duration - 0.05);
   const W = video.videoWidth, H = video.videoHeight;
@@ -196,10 +250,10 @@ export async function processVideo(video, { landmarker, fps = 10, start = 0, end
     // 2. Find the climber: in the tracked region first, then a bigger region, then the whole frame.
     let pose = null;
     if (roi) {
-      pose = choose(detectRegion(landmarker, video, ctx, W, H, roi.cx - roi.s / 2, roi.cy - roi.s / 2, roi.s), last);
+      pose = choose(detectRegion(landmarker, video, ctx, W, H, roi.cx - roi.s / 2, roi.cy - roi.s / 2, roi.s, twoPass), last);
       if (!pose && lostFor < fps * 2) {
         const s2 = Math.min(maxS, roi.s * 2);
-        pose = choose(detectRegion(landmarker, video, ctx, W, H, roi.cx - s2 / 2, roi.cy - s2 / 2, s2), last);
+        pose = choose(detectRegion(landmarker, video, ctx, W, H, roi.cx - s2 / 2, roi.cy - s2 / 2, s2, twoPass), last);
       }
     }
     if (!pose && (!roi || lostFor % Math.max(1, Math.round(fps)) === 0)) {
@@ -233,40 +287,4 @@ export async function processVideo(video, { landmarker, fps = 10, start = 0, end
     onFrame?.((k + 1) / total, pts, boxNorm);
   }
   return { frames, aspect, width: W, height: H };
-}
-
-export const POSE_CONNECTIONS = [
-  [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
-  [11, 23], [12, 24], [23, 24],
-  [23, 25], [25, 27], [27, 29], [29, 31], [27, 31],
-  [24, 26], [26, 28], [28, 30], [30, 32], [28, 32],
-];
-
-// Draws a skeleton; points are MediaPipe-normalised {x,y,visibility} or [x/aspect, y, v].
-export function drawSkeleton(ctx, pts, w, h, { color = '#3987e5', joint = '#ffffff' } = {}) {
-  if (!pts) return;
-  const get = (i) => {
-    const q = pts[i];
-    if (!q) return null;
-    return Array.isArray(q) ? { x: q[0], y: q[1], v: q[2] } : { x: q.x, y: q.y, v: q.visibility ?? 1 };
-  };
-  ctx.lineWidth = Math.max(2, w / 200);
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = color;
-  for (const [a, b] of POSE_CONNECTIONS) {
-    const p = get(a), q = get(b);
-    if (!p || !q || p.v < 0.3 || q.v < 0.3) continue;
-    ctx.beginPath();
-    ctx.moveTo(p.x * w, p.y * h);
-    ctx.lineTo(q.x * w, q.y * h);
-    ctx.stroke();
-  }
-  ctx.fillStyle = joint;
-  for (const i of [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 31, 32]) {
-    const p = get(i);
-    if (!p || p.v < 0.3) continue;
-    ctx.beginPath();
-    ctx.arc(p.x * w, p.y * h, Math.max(3, w / 160), 0, Math.PI * 2);
-    ctx.fill();
-  }
 }

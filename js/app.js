@@ -1,6 +1,7 @@
-import { analyze } from './metrics.js';
+import { analyze, ANALYSIS_VERSION } from './metrics.js';
+import { framesFromTrack } from './refine.js';
 import { coach } from './coach.js';
-import { createPlayer, packTrack, unpackTrack } from './player.js';
+import { createPlayer, packTrack, displayTrack } from './player.js';
 import { renderReport, fmtTime, fmtDate, h, gradeScaleOptions } from './report.js';
 import { renderProgress } from './progress.js';
 import { GRADE_SCALES } from './grades.js';
@@ -175,7 +176,9 @@ async function runAnalysis() {
   const started = performance.now();
   try {
     const pose = await import('./pose.js');
-    let { landmarker, delegate } = await pose.loadWithFallback(settings.model, settings.preferCpu);
+    const q = store.QUALITY[settings.quality] || store.QUALITY.accurate;
+    if (q.model === 'heavy') setProgress('Loading the high-accuracy pose model…', 0.02, 'The first run downloads about 30 MB, and it\'s cached after that.');
+    let { landmarker, delegate } = await pose.loadWithFallback(q.model, settings.preferCpu);
     const run = async (lm) => pose.processVideo(video, {
       landmarker: lm,
       fps: Number(settings.fps) || 10,
@@ -183,6 +186,7 @@ async function runAnalysis() {
       end: trim.end,
       signal: abort.signal,
       hint: pick,
+      twoPass: q.twoPass,
       onFrame: (frac, pts, box) => {
         player.setLive(pts, box);
         const el = (performance.now() - started) / 1000;
@@ -194,7 +198,7 @@ async function runAnalysis() {
     // Some iOS GPUs return nothing; retry once on the CPU.
     if (delegate === 'GPU' && !out.frames.some((f) => f.p)) {
       setProgress('Retrying in compatibility mode…', 0.02, '');
-      ({ landmarker } = await pose.loadWithFallback(settings.model, true));
+      ({ landmarker } = await pose.loadWithFallback(q.model, true));
       out = await run(landmarker);
     }
     player.setLive(null);
@@ -213,7 +217,9 @@ async function runAnalysis() {
       ...details,
       videoName: currentFile?.name || '',
       videoDuration: video.duration,
-      settings: { model: settings.model, fps: settings.fps },
+      videoHeight: out.height,
+      analysisVersion: ANALYSIS_VERSION,
+      settings: { quality: settings.quality, fps: settings.fps },
       analysis,
       report,
       track,
@@ -236,12 +242,12 @@ async function runAnalysis() {
   }
 }
 
-function showResult(session) {
+async function showResult(session) {
   step('result');
   player.setMarker(null);
-  player.setTrack(unpackTrack(session.track));
+  player.setTrack(displayTrack(session.track));
   const box = $('result-step');
-  renderReport(box, session, { heightCm: settings.heightCm, onSeek: (t) => player.seek(t) });
+  renderReport(box, session, { heightCm: settings.heightCm, onSeek: (t) => player.seek(t), history: await store.listSessions() });
   box.append(h('div', { class: 'actions' },
     h('label', { class: 'btn btn-primary btn-block', for: 'file-input', text: 'Analyse another video' }),
   ));
@@ -251,6 +257,26 @@ function showResult(session) {
 
 // ---------- history ----------
 
+// Re-analyses climbs saved by an older version, from their stored poses (no video needed).
+async function upgradeSession(s) {
+  if ((s.analysisVersion || 1) >= ANALYSIS_VERSION) return s;
+  try {
+    if (s.track) {
+      const analysis = analyze(framesFromTrack(s.track), { frameHeightPx: s.videoHeight || null });
+      if (analysis.ok) s.analysis = analysis;
+    }
+    s.report = coach(s.analysis);
+    s.analysisVersion = ANALYSIS_VERSION;
+    await store.saveSession(s);
+  } catch (e) { console.warn('Could not upgrade session', s.id, e); }
+  return s;
+}
+async function upgradeAll(sessions) {
+  const out = [];
+  for (const s of sessions) out.push(await upgradeSession(s));
+  return out;
+}
+
 let detailPlayer = null;
 
 async function refreshHistory() {
@@ -258,7 +284,7 @@ async function refreshHistory() {
   $('history-list').hidden = false;
   if (detailPlayer) { detailPlayer.destroy(); detailPlayer = null; }
   const list = $('history-list');
-  const sessions = await store.listSessions();
+  const sessions = await upgradeAll(await store.listSessions());
   list.replaceChildren();
   if (!sessions.length) {
     list.append(h('div', { class: 'card empty' },
@@ -282,8 +308,10 @@ async function refreshHistory() {
 }
 
 async function openSession(id, fromProgress = false) {
-  const s = await store.getSession(id);
+  let s = await store.getSession(id);
   if (!s) return;
+  s = await upgradeSession(s);
+  const history = await store.listSessions();
   if (fromProgress) showView('history');
   $('history-list').hidden = true;
   const box = $('history-detail');
@@ -299,6 +327,7 @@ async function openSession(id, fromProgress = false) {
   const reportBox = h('div', { class: 'view' });
 
   const render = (canSeek) => renderReport(reportBox, s, {
+    history,
     heightCm: settings.heightCm,
     onSeek: canSeek ? (t) => detailPlayer.seek(t) : null,
     extra,
@@ -312,7 +341,7 @@ async function openSession(id, fromProgress = false) {
     try {
       await detailPlayer.load(f);
       if (s.videoDuration && Math.abs(detailPlayer.video.duration - s.videoDuration) > 1) toast('This video is a different length from the one analysed. The skeleton may not line up.');
-      detailPlayer.setTrack(unpackTrack(s.track));
+      detailPlayer.setTrack(displayTrack(s.track));
       attachBtn.hidden = true;
       render(true);
     } catch (err) { toast(err.message); }
@@ -331,7 +360,7 @@ async function openSession(id, fromProgress = false) {
 // ---------- progress ----------
 
 async function refreshProgress() {
-  const sessions = await store.listSessions();
+  const sessions = await upgradeAll(await store.listSessions());
   renderProgress($('progress-content'), sessions, { onOpen: openSession });
 }
 
@@ -339,7 +368,7 @@ async function refreshProgress() {
 
 function bindSettings() {
   $('set-height').value = settings.heightCm || '';
-  $('set-model').value = settings.model;
+  $('set-model').value = settings.quality;
   $('set-fps').value = String(settings.fps);
   $('set-cpu').checked = !!settings.preferCpu;
   $('set-height').addEventListener('change', (e) => {
@@ -347,7 +376,7 @@ function bindSettings() {
     settings.heightCm = v >= 100 && v <= 230 ? v : null;
     store.saveSettings(settings);
   });
-  $('set-model').addEventListener('change', (e) => { settings.model = e.target.value; store.saveSettings(settings); });
+  $('set-model').addEventListener('change', (e) => { settings.quality = e.target.value; store.saveSettings(settings); });
   $('set-fps').addEventListener('change', (e) => { settings.fps = Number(e.target.value); store.saveSettings(settings); });
   $('set-cpu').addEventListener('change', (e) => { settings.preferCpu = e.target.checked; store.saveSettings(settings); });
 }

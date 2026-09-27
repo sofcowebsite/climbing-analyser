@@ -1,14 +1,14 @@
 // Offline support. App files: network first (so updates arrive), cache as fallback.
 // The large model + WebAssembly files: cache first (they never change for a given version).
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `crux-shell-${VERSION}`;
 const HEAVY = `crux-heavy-${VERSION}`;
 const SHELL_FILES = [
   './',
   'index.html',
   'css/styles.css',
-  'js/app.js', 'js/metrics.js', 'js/camera.js', 'js/coach.js', 'js/pose.js', 'js/player.js',
+  'js/app.js', 'js/metrics.js', 'js/camera.js', 'js/refine.js', 'js/coach.js', 'js/pose.js', 'js/player.js',
   'js/report.js', 'js/progress.js', 'js/charts.js', 'js/storage.js', 'js/grades.js',
   'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',

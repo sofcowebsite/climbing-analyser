@@ -5,6 +5,7 @@ import { analyze, angle, fillGaps, smooth, fixLeftRight } from '../js/metrics.js
 import { coach, METRIC_DEFS } from '../js/coach.js';
 import { hardestSends } from '../js/grades.js';
 import { makeClimb } from './synthetic.mjs';
+import { refinePoses } from '../js/refine.js';
 
 test('helpers', () => {
   assert.equal(Math.round(angle([0, 1], [0, 0], [1, 0])), 90);
@@ -116,4 +117,58 @@ test('camera pans are removed from the measurements', () => {
   assert.equal(b.metrics.handMoves, a.metrics.handMoves);
   assert.ok(Math.abs(b.metrics.heightGain - a.metrics.heightGain) < 0.2);
   assert.equal(b.metrics.cameraMoved, true);
+});
+
+test('legs hidden behind the body are still tracked (not dropped)', () => {
+  const frames = makeClimb({ cycles: 8, occludeLegs: true, noise: 0.003 });
+  const truth = frames.truth;
+  const r = refinePoses(frames);
+  // Every frame keeps an ankle position, and it stays close to the truth.
+  let have = 0, err = 0, n = 0, rawErr = 0;
+  frames.forEach((f, i) => {
+    const y = r.world[27].y[i];
+    if (Number.isFinite(y)) have++;
+    if (f.p[27][2] < 0.2 && Number.isFinite(y)) {
+      err += Math.abs(y - truth[i].lFoot[1]);
+      rawErr += Math.abs(f.p[27][1] - truth[i].lFoot[1]);
+      n++;
+    }
+  });
+  assert.ok(have / frames.length > 0.98, `coverage ${have / frames.length}`);
+  assert.ok(err / n < (rawErr / n) * 0.6, `refined error ${(err / n).toFixed(4)} vs raw ${(rawErr / n).toFixed(4)}`);
+  // Move counting still works with the legs hidden much of the time.
+  const a = analyze(frames);
+  assert.equal(a.metrics.handMoves, 8);
+  assert.ok(a.metrics.footMoves >= 11 && a.metrics.footMoves <= 17, `footMoves=${a.metrics.footMoves}`);
+});
+
+test('detailed coaching: action plan, move-by-move, sections, sides', async () => {
+  const r = analyze(makeClimb({ cycles: 10, feetFirst: false, bentArms: true }));
+  const c = coach(r);
+  assert.ok(c.actionPlan.length >= 1 && c.actionPlan.length <= 3);
+  for (const p of c.actionPlan) {
+    assert.ok(p.title && p.saw && p.why && p.doThis, `incomplete plan item ${p.title}`);
+  }
+  assert.equal(c.actionPlan[0].title, 'Feet first');
+  assert.equal(c.moveReview.length, r.metrics.handMoves);
+  assert.ok(c.moveReview.every((m) => ['clean', 'ok', 'rough'].includes(m.rating)));
+  assert.ok(c.moveReview.some((m) => m.bad.includes('Reached without moving your feet first')));
+  assert.equal(r.sections.length, 3);
+  assert.ok(c.sectionInsights.length >= 1);
+  assert.ok(c.sideInsights.length >= 1);
+  assert.ok(typeof c.moveSummary === 'string' && c.moveSummary.length > 20);
+  // A good climber gets strengths and "feet first" isn't the top priority.
+  const g = coach(analyze(makeClimb({ cycles: 10 })));
+  assert.ok(g.strengths.some((s) => s.key === 'feetFirstRatio'));
+  assert.ok(!g.actionPlan.some((p) => p.title === 'Feet first'));
+});
+
+test('saved sessions can be re-analysed from their stored poses', async () => {
+  const { packTrack } = await import('../js/player.js');
+  const { framesFromTrack } = await import('../js/refine.js');
+  const frames = makeClimb({ cycles: 8 });
+  const again = analyze(framesFromTrack(packTrack(frames, 0.5625)));
+  const direct = analyze(frames);
+  assert.equal(again.metrics.handMoves, direct.metrics.handMoves);
+  assert.ok(Math.abs(again.metrics.footMoves - direct.metrics.footMoves) <= 1);
 });

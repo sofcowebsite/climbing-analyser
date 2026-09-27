@@ -25,6 +25,7 @@ export function makeClimb(style = {}) {
   const cycleSec = 3;
   const dur = cycles * cycleSec + 2;
   const frames = [];
+  const truth = [];
   // State of holds (world y, smaller is higher).
   let hipY = 0.8;
   const hands = { l: [cx - 0.35 * T, hipY - 2.0 * T], r: [cx + 0.35 * T, hipY - 2.2 * T] };
@@ -67,7 +68,21 @@ export function makeClimb(style = {}) {
     set(23, hl); set(24, hr); set(25, kl); set(26, kr);
     set(27, F.l); set(28, F.r); set(29, [F.l[0] - 0.05 * T, F.l[1] + 0.05 * T]); set(30, [F.r[0] + 0.05 * T, F.r[1] + 0.05 * T]);
     set(31, [F.l[0] - 0.1 * T, F.l[1] + 0.02 * T]); set(32, [F.r[0] + 0.1 * T, F.r[1] + 0.02 * T]);
+    if (style.occludeLegs) {
+      // Legs hidden behind the body for ~40% of the time: the model reports low visibility
+      // and guesses positions pulled toward the hips, with extra jitter.
+      const hidden = Math.sin(t * 1.7) > 0.2;
+      if (hidden) {
+        for (const idx of [25, 26, 27, 28, 29, 30, 31, 32]) {
+          const [x, y] = p[idx];
+          const hip = idx % 2 ? hl : hr;
+          p[idx] = [x + (hip[0] - x) * 0.25 + rnd() * 0.02, y + (hip[1] - y) * 0.25 + rnd() * 0.02, 0.12];
+        }
+      }
+    }
+    truth.push(style.occludeLegs ? { lFoot: F.l.slice(), rFoot: F.r.slice() } : null);
     frames.push({ t, p });
   }
+  if (style.occludeLegs) frames.truth = truth;
   return frames;
 }

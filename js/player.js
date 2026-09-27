@@ -1,7 +1,53 @@
 // A video element with a skeleton overlay that follows playback.
 
-import { drawSkeleton } from './pose.js';
 import { KEPT_LANDMARKS } from './metrics.js';
+import { refinePoses } from './refine.js';
+
+export const POSE_CONNECTIONS = [
+  [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
+  [11, 23], [12, 24], [23, 24],
+  [23, 25], [25, 27], [27, 29], [29, 31], [27, 31],
+  [24, 26], [26, 28], [28, 30], [30, 32], [28, 32],
+];
+
+// Draws a skeleton; pts are [x, y, confidence, estimated?] normalised 0..1.
+// Clearly seen parts are solid. Parts the model couldn't see properly (e.g. legs hidden
+// behind the body) are drawn faded and dashed rather than disappearing.
+export function drawSkeleton(ctx, pts, w, h, { color = '#3987e5', joint = '#ffffff', hideUnsure = false } = {}) {
+  if (!pts) return;
+  const get = (i) => {
+    const q = pts[i];
+    if (!q) return null;
+    return { x: q[0], y: q[1], v: q[2] ?? 1, est: q[3] === 1 || (q[2] ?? 1) < 0.35 };
+  };
+  const lw = Math.max(2, w / 200);
+  ctx.lineCap = 'round';
+  for (const [a, b] of POSE_CONNECTIONS) {
+    const p = get(a), q = get(b);
+    if (!p || !q) continue;
+    const unsure = p.est || q.est;
+    if (unsure && hideUnsure) continue;
+    ctx.globalAlpha = unsure ? 0.45 : 1;
+    ctx.setLineDash(unsure ? [lw * 2, lw * 2] : []);
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(p.x * w, p.y * h);
+    ctx.lineTo(q.x * w, q.y * h);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.fillStyle = joint;
+  for (const i of [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 31, 32]) {
+    const p = get(i);
+    if (!p || (p.est && hideUnsure)) continue;
+    ctx.globalAlpha = p.est ? 0.45 : 1;
+    ctx.beginPath();
+    ctx.arc(p.x * w, p.y * h, Math.max(3, w / 160) * (p.est ? 0.8 : 1), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
 
 export function createPlayer(container) {
   container.replaceChildren();
@@ -82,7 +128,8 @@ export function createPlayer(container) {
     ctx.clearRect(0, 0, size.w, size.h);
     if (!skel.checked) return;
     const pts = live || frameAt(video.currentTime);
-    if (pts) drawSkeleton(ctx, pts, size.w, size.h, { color: '#3987e5', joint: '#ffffff' });
+    // Live (raw) poses during analysis hide unsure parts; the cleaned-up replay shows them faded.
+    if (pts) drawSkeleton(ctx, pts, size.w, size.h, { color: '#3987e5', joint: '#ffffff', hideUnsure: !!live });
     const lw = Math.max(2, size.w / 250);
     if (liveBox) {
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
@@ -200,4 +247,18 @@ export function unpackTrack(packed) {
       return pts;
     }),
   };
+}
+
+// Stored raw track -> cleaned-up track for replay (continuous legs, estimated parts marked).
+export function displayTrack(packed) {
+  if (!packed) return null;
+  const A = packed.aspect;
+  const raw = unpackTrack(packed);
+  const frames = packed.t.map((t, i) => ({
+    t,
+    cam: packed.c ? packed.c[i] : [0, 0],
+    p: raw.pts[i] ? raw.pts[i].map((q) => (q ? [q[0] * A, q[1], q[2]] : [0, 0, 0])) : null,
+  }));
+  const r = refinePoses(frames);
+  return { t: packed.t, pts: r.frames.map((f) => (f.p ? f.p.map((q) => (q ? [q[0] / A, q[1], q[2], q[3]] : null)) : null)) };
 }

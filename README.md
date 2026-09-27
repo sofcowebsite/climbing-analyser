@@ -18,7 +18,13 @@ Any free static host also works: Netlify, Cloudflare Pages, or Vercel. Just poin
 
 1. **Film:** filming from far away (e.g. outdoors from the base of the crag) is fine. Record in 4K, use the 2×/3× lens if the route still fits, keep the camera as still as you can, and don't zoom while recording.
 2. **Analyse tab:** choose the video, **tap on the climber** (important when the belayer or other people are in shot), optionally trim it to the climb, add the name, grade and result, then tap **Analyse climb**. Expect roughly 30–90 s per minute of video on a recent iPhone.
-3. **Report:** you get an overall score, four technique areas, what you did well, what to work on (with drills), a height-over-time chart, and key moments you can tap to jump the video there. You can replay the video with a skeleton overlay.
+3. **Report:** a detailed breakdown:
+   - **Your plan for next session:** the top 3 changes, each with what we saw (and on which moves), why it matters, what to do next time, a drill and a target number.
+   - **Move by move:** every hand move with ✓/✗ checks (feet first? straight arm? legs or arms? hips over feet? controlled arrival? hesitation? re-grip?). Tap to watch it.
+   - **Start / middle / top:** how your technique changed as you got higher and more tired.
+   - **Left vs right:** imbalances between your arms and legs.
+   - **Detailed breakdown per area**, extra observations (feet cutting loose, high steps, shake-outs, stance, pace), and a **comparison with your previous climbs**.
+   - Height-over-time chart, key moments, and a video replay with a skeleton overlay.
 4. **History / Progress:** every climb is saved on the device. Progress shows score trends, send rate, hardest send, and your recurring weak spots.
 5. **Guide:** set your height (for metre estimates), switch analysis quality, and export or import backups.
 
@@ -28,6 +34,7 @@ Any free static host also works: Netlify, Cloudflare Pages, or Vercel. Just poin
 - **Picking the right person:** the tap tells it who the climber is. Without a tap it picks the highest person in the frame, which is usually the climber rather than the belayer.
 - **Camera movement:** pans are measured by matching the rock texture around the climber against a reference frame, then removed from the measurements. Zooming during the video is not compensated.
 - **Left/right mix-ups:** pose models often swap left and right on small figures or climbers seen from behind. These swaps are detected and undone over time.
+- **Hidden legs:** legs are often partly hidden behind the body. Each frame is analysed twice (normal and mirrored) and the results are combined. Doubtful points are weighted down by a smoothing filter instead of being thrown away, hidden stretches are bridged using body proportions, and hold detection only trusts limbs while they're actually visible. In the replay, estimated parts of the skeleton are drawn faded and dashed.
 - **Small-figure safeguards:** more smoothing, jitter-aware hold detection, and fine-detail scores (grip and foot readjustments) are skipped when the climber's torso is under about 60 px.
 
 ## What it measures
@@ -63,8 +70,9 @@ js/metrics.js                pose frames → metrics (pure, tested)
 js/coach.js                  metrics → scores + feedback (pure, tested)
 js/pose.js                   MediaPipe Pose in the browser + zoomed climber tracking
 js/camera.js                 camera-movement estimation (pure, tested)
+js/refine.js                 pose clean-up: left/right fixes, confidence-weighted smoothing, bone lengths (pure, tested)
 vendor/mediapipe/            MediaPipe Tasks Vision 1.0.1 JS + WASM (Apache 2.0)
-models/                      pose_landmarker_full / lite models (Apache 2.0)
+models/                      pose_landmarker lite / full / heavy models (Apache 2.0)
 sw.js, manifest.webmanifest  offline support + installable app
 tests/                       node:test suite with a synthetic climber; outdoor-scene.html test fixture
 ```

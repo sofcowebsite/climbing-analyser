@@ -1,4 +1,6 @@
-// Turns raw metrics into scores (0-100) and plain-language coaching.
+// Turns measurements into scores (0-100) and detailed, plain-language coaching:
+// a per-area breakdown, a move-by-move review, how technique changed from start to top,
+// left/right differences and a prioritised action plan with targets for next session.
 // Pure module: no DOM, testable in Node.
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -12,97 +14,158 @@ function scale(v, bad, good) {
 
 const pct = (v) => `${Math.round(v * 100)}%`;
 const f1 = (v) => (Math.round(v * 10) / 10).toString();
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+const list = (nums, max = 8) => {
+  if (!nums.length) return '';
+  const s = nums.slice(0, max).map((x) => `#${x}`);
+  if (nums.length > max) return `${s.join(', ')} and ${nums.length - max} more`;
+  return s.length === 1 ? s[0] : `${s.slice(0, -1).join(', ')} and ${s[s.length - 1]}`;
+};
+// Aim for a realistic step up, not perfection.
+const stepUp = (v, good, stepFrac = 0.5) => v + (good - v) * stepFrac;
 
-// Each metric definition: how to score it, what it means, and what to say.
+// Each measure: how it's scored, what it means, why it matters, what to do about it.
 export const METRIC_DEFS = [
+  {
+    key: 'feetFirstRatio', category: 'footwork', label: 'Feet first',
+    format: pct, score: (v) => scale(v, 0.25, 0.8),
+    what: 'Share of hand moves where you moved a foot first, after grabbing the previous hold.',
+    why: 'Moving your feet up first puts your body in position, so the next hand move becomes a push with your legs instead of a pull with your arms. It\'s the single habit that most separates efficient climbers from strong-armed ones.',
+    good: (v, m) => `You set your feet before ${pct(v)} of your hand moves. Your hands were mostly following your feet, which is exactly the right order.`,
+    bad: (v, m) => `You moved a foot first on only ${pct(v)} of your hand moves. Most of the time your hand went up while your feet stayed low, so you had to pull yourself up to the new hold.`,
+    cue: 'Before every reach, stop and ask: "Where do my feet go?" Move at least one foot up, then reach.',
+    drill: 'Drill: "Feet, feet, hand". On climbs 2–3 grades below your max, make two foot moves before every hand move. Exaggerate it, even with tiny footholds.',
+    target: (v) => `Feet first on at least ${pct(Math.min(0.9, stepUp(v, 0.8)))} of hand moves.`,
+  },
   {
     key: 'footHandRatio', category: 'footwork', label: 'Feet per hand move',
     format: (v) => f1(v), score: (v) => scale(v, 0.4, 1.1),
     what: 'How many times you moved a foot for every hand move.',
-    good: (v, m) => `You made ${m.footMoves} foot moves for ${m.handMoves} hand moves (${f1(v)} per hand move). Moving your feet this often means your legs are doing the pushing.`,
-    bad: (v, m) => `You moved your feet ${m.footMoves} times but your hands ${m.handMoves} times (${f1(v)} feet per hand move). Climbers who move efficiently usually move their feet at least as often as their hands. High feet let you push up with your legs instead of pulling with your arms.`,
+    why: 'Your legs are several times stronger than your arms. More, smaller foot moves keep your feet high, so each hand move needs less pulling.',
+    good: (v, m) => `You made ${m.footMoves} foot moves for ${m.handMoves} hand moves (${f1(v)} per hand move), so your legs did a lot of the work.`,
+    bad: (v, m) => `You moved your feet ${m.footMoves} times but your hands ${m.handMoves} times (${f1(v)} feet per hand move). Your feet were being left behind, which means reaching from low, stretched positions.`,
+    cue: 'Keep your feet "chasing" your hands: when your hands are high and your feet low, the next move is a foot, not a hand.',
     drill: 'Drill: "Two feet per hand". On routes well below your limit, make at least two foot moves before every hand move, even small ones to better footholds.',
+    target: (v) => `At least ${f1(Math.min(1.5, stepUp(v, 1.2)))} foot moves per hand move.`,
   },
   {
-    key: 'footReadjustRate', category: 'footwork', label: 'Foot readjustments',
-    format: (v) => `${f1(v)} per placement`, score: (v) => scale(v, 0.8, 0.1),
-    what: 'How often a foot shuffled again shortly after being placed. Lower is better ("quiet feet").',
+    key: 'footReadjustRate', category: 'footwork', label: 'Quiet feet',
+    format: (v) => `${f1(v)} readjustments per placement`, score: (v) => scale(v, 0.8, 0.1),
+    what: 'How often a foot shuffled again shortly after being placed. Lower is better.',
+    why: 'Each re-placement costs energy and grip time. It usually means you looked away before your toe was properly on the hold.',
     good: (v) => `Your feet mostly stayed where you put them (${f1(v)} readjustments per placement). That's precise, quiet footwork.`,
-    bad: (v, m) => `Your feet were readjusted ${f1(v)} times per placement. Shuffling a foot after placing it wastes energy and usually means you looked away from the foothold too early.`,
-    drill: 'Drill: "Silent feet". Climb easy routes placing every foot without a sound and without moving it again. Watch the foothold until your toe is on it.',
+    bad: (v) => `Your feet were readjusted ${f1(v)} times per placement. You're placing them roughly and then correcting, instead of placing them precisely once.`,
+    cue: 'Watch your foot all the way onto the hold, and only look up once it\'s weighted.',
+    drill: 'Drill: "Silent feet". Climb easy routes placing every foot without a sound and without moving it again.',
+    target: (v) => `Under ${f1(Math.max(0.15, stepUp(v, 0.15)))} readjustments per placement.`,
   },
   {
-    key: 'straightArmRatio', category: 'arms', label: 'Straight arms when static',
+    key: 'straightArmRatio', category: 'arms', label: 'Straight arms when still',
     format: pct, score: (v) => scale(v, 0.15, 0.7),
     what: 'Of the moments you were holding still, the share spent hanging on straight arms (elbow 145° or more).',
-    good: (v) => `You held still on straight arms ${pct(v)} of the time. Hanging off your skeleton rather than your biceps saves a lot of energy.`,
-    bad: (v) => `Only ${pct(v)} of your static moments were on straight arms. Holding on with bent arms makes your biceps and forearms do the work and pumps you out fast.`,
-    drill: 'Drill: "Straight-arm traverse". Traverse near the ground keeping your arms straight at all times. Move by bending your legs and turning your hips, not by pulling.',
+    why: 'A straight arm hangs off bones and ligaments. A bent arm holds you up with your biceps and forearms, which is what pumps you out on longer climbs.',
+    good: (v) => `You held still on straight arms ${pct(v)} of the time, hanging off your skeleton rather than your muscles.`,
+    bad: (v) => `Only ${pct(v)} of your still moments were on straight arms. The rest of the time you were locked off with bent elbows, burning strength just to stay on.`,
+    cue: 'Whenever you stop (to look, clip, or chalk), let your arms go long and sink your hips down and back.',
+    drill: 'Drill: "Straight-arm traverse". Traverse near the ground keeping your arms straight the whole time. Move by bending your legs and turning your hips.',
+    target: (v) => `Straight arms at least ${pct(Math.min(0.85, stepUp(v, 0.75)))} of the time when still.`,
   },
   {
     key: 'legDrive', category: 'arms', label: 'Leg drive',
     format: pct, score: (v) => scale(v, 0.3, 0.7),
-    what: 'Estimated share of your upward movement driven by straightening your legs rather than bending your arms.',
-    good: (v) => `About ${pct(v)} of your upward movement came from pushing with your legs. Legs are much stronger than arms, so this is the efficient way to climb.`,
-    bad: (v) => `Only about ${pct(v)} of your upward movement came from your legs. The rest was pulling with your arms. Your legs are several times stronger than your arms.`,
+    what: 'Estimated share of your upward movement that came from straightening your legs rather than bending your arms.',
+    why: 'Pushing with your legs is cheap. Pulling with your arms is expensive. On a route of 20 moves, the difference decides whether you reach the top pumped or fresh.',
+    good: (v) => `About ${pct(v)} of your upward movement came from pushing with your legs.`,
+    bad: (v) => `Only about ${pct(v)} of your upward movement came from your legs. The rest was pulling with your arms.`,
+    cue: 'Think "stand up", not "pull up". Push through the foothold until your leg is straight, and only then grab the next hold.',
     drill: 'Drill: "Hover hands". Before grabbing each new hold, hover your hand over it for one second. You can only do that if your legs and balance are holding you up.',
+    target: (v) => `Leg drive above ${pct(Math.min(0.8, stepUp(v, 0.7)))}.`,
   },
   {
     key: 'balanceOffset', category: 'body', label: 'Hips over feet',
     format: (v) => `${f1(v)} torso lengths off`, score: (v) => scale(v, 0.9, 0.2),
-    what: 'When you were standing still, how far your centre of mass was to the side of your feet. Lower is better on vertical walls.',
+    what: 'When you were standing still, how far your centre of mass was to the side of your feet. Lower is better on vertical rock.',
+    why: 'When your weight is over your feet, gravity presses you onto the footholds. When it\'s off to the side, you swing out ("barn door"), and your hands have to squeeze harder to hold you in.',
     good: (v) => `When you stopped, your hips were well centred over your feet (${f1(v)} torso lengths off). Good balance means less grip needed.`,
-    bad: (v) => `When you stopped, your hips were on average ${f1(v)} torso lengths to the side of your feet. When your weight isn't over your feet, your hands have to hold you in, which costs grip strength.`,
-    drill: 'Drill: "Hip over foot". Before every move, shift your hips over the foot you\'re about to push from. Try flagging (sticking a leg out to the side as a counterweight) when both feet are on one side.',
+    bad: (v) => `When you stopped, your hips were on average ${f1(v)} torso lengths to the side of your feet, so your hands were fighting to keep you in.`,
+    cue: 'Before each reach, shift your hips over the foot you\'ll push from. If both feet are on one side, stick the other leg out as a counterweight (flag).',
+    drill: 'Drill: "One-foot balance". On a slab or vertical wall, practise standing on one foot and taking both hands off for a second. Shift your hips until you can.',
+    target: (v) => `Hips within ${f1(Math.max(0.25, stepUp(v, 0.25)))} torso lengths of your feet.`,
   },
   {
-    key: 'turnedShare', category: 'body', label: 'Hip turning',
-    // Not scored: how much to turn depends on wall angle, which the camera can't see.
-    format: pct, score: () => null, info: true,
+    key: 'turnedShare', category: 'body', label: 'Hip turning', info: true,
+    // Not scored: how much to turn depends on the wall angle, which the camera can't see.
+    format: pct, score: () => null,
     what: 'Share of moving time with your body turned side-on to the wall (twist-locks, drop knees, back-steps).',
-    good: (v) => `You turned your hips into the wall ${pct(v)} of the time you were moving. Twisting brings your hips close to the wall and extends your reach.`,
-    bad: (v) => `You stayed square to the wall almost the whole time (turned only ${pct(v)} of moving time). Turning a hip into the wall (drop knees, back-steps) gives you extra reach and takes weight off your arms, especially on steep walls.`,
+    why: 'Turning a hip into the wall brings your centre of mass closer to the rock and extends your reach by several centimetres. On steep rock it\'s essential.',
+    good: (v) => `You turned your hips into the wall ${pct(v)} of the time you were moving, using twist-locks and back-steps.`,
+    bad: (v) => `You stayed square to the wall almost the whole time (turned only ${pct(v)} of moving time).`,
+    cue: 'On side-pulls and long reaches, turn the hip on the reaching side into the wall and step on the outside edge of that foot.',
     drill: 'Drill: "Outside edge only". On a slightly overhanging route, use the outside edge of your shoe on every foothold. This forces you to turn your hips in.',
+    target: () => 'Turn into the wall on at least a few moves per route, especially long reaches.',
   },
   {
     key: 'pathEfficiency', category: 'flow', label: 'Movement efficiency',
     format: pct, score: (v) => scale(v, 0.2, 0.6),
     what: 'Straight-line distance your body travelled divided by the actual path it took. Higher means less wasted movement.',
-    good: (v) => `Your body took a direct line up the route (${pct(v)} efficiency), with little wasted movement.`,
-    bad: (v) => `Your body travelled about ${f1(1 / Math.max(v, 0.05))}× the straight-line distance up the route. Swinging back and forth or up and down wastes energy.`,
+    why: 'Every swing, lurch or up-and-down costs energy and makes holds harder to use. Efficient climbers look slow and calm because nothing is wasted.',
+    good: (v) => `Your body took a direct line up the route (${pct(v)} efficiency).`,
+    bad: (v) => `Your body travelled about ${f1(1 / Math.max(v, 0.05))}× the straight-line distance up the route. That means swinging, lurching or moving up and down.`,
+    cue: 'Move your hips in one smooth line toward the next position. Plan the body position before the hand move.',
     drill: 'Drill: "Slow motion". Climb a familiar route as slowly and smoothly as you can, keeping your hips moving steadily in one direction.',
+    target: (v) => `Efficiency above ${pct(Math.min(0.75, stepUp(v, 0.65)))}.`,
+  },
+  {
+    key: 'controlledRatio', category: 'flow', label: 'Controlled moves',
+    format: pct, score: (v) => scale(v, 0.5, 0.95),
+    what: 'Share of hand moves that ended without a jolt, swing or feet cutting loose.',
+    why: 'Arriving at a hold in control means you can use it immediately. A jolt or swing forces you to squeeze hard just to stay on, and it\'s how people fall off holds they actually reached.',
+    good: (v) => `${pct(v)} of your moves ended in control: no jolts, swings or feet cutting loose.`,
+    bad: (v) => `Only ${pct(v)} of your moves ended in control. The rest ended in a jolt, a swing, or your feet cutting loose.`,
+    cue: 'Keep your core tight and your toes pulling into the footholds as you reach. Arrive at the hold, don\'t slap it.',
+    drill: 'Drill: "Deadpoint practice". On easy terrain, practise moving to a hold so you arrive at the top of your motion, when your body is weightless, and grab it softly.',
+    target: (v) => `At least ${pct(Math.min(0.95, stepUp(v, 0.95)))} of moves under control.`,
   },
   {
     key: 'jerkyPerMin', category: 'flow', label: 'Sudden jolts',
     format: (v) => `${f1(v)} per min`, score: (v) => scale(v, 8, 1),
     what: 'Sudden changes in body speed (lunging, slipping, catching a swing). Lower is smoother.',
+    why: 'Jolts shock-load your fingers and shoulders and usually mean a move was lunged rather than controlled.',
     good: (v) => `Your movement was smooth, with only ${f1(v)} sudden jolts per minute.`,
-    bad: (v) => `You had ${f1(v)} sudden jolts per minute: sharp lunges, slips or swings you had to catch. Controlled movement is safer and saves energy.`,
-    drill: 'Drill: "Deadpoint practice". On easy terrain, practise moving to a hold so you arrive at the top of your motion, when your body is weightless. Grab it softly, with no slap.',
+    bad: (v) => `You had ${f1(v)} sudden jolts per minute: sharp lunges, slips or swings you had to catch.`,
+    cue: 'If you need momentum, generate it from your legs and hips in one fluid motion. Don\'t throw with your arms.',
+    drill: 'Drill: "Pause at the hold". On every move, freeze for a second just as you touch the new hold, before weighting it. This forces controlled arrivals.',
+    target: (v) => `Fewer than ${f1(Math.max(1, stepUp(v, 1)))} jolts per minute.`,
   },
   {
     key: 'hesitationsPerMin', category: 'flow', label: 'Hesitations',
     format: (v) => `${f1(v)} per min`, score: (v) => scale(v, 4, 0.5),
     what: 'Short stops of 1–4 seconds mid-route. These are usually unplanned pauses to work out the next move.',
+    why: 'Stopping while you\'re still on your arms to work out the next move burns strength without resting. Knowing the sequence lets you keep moving and save your energy for the hard part.',
     good: (v) => `You kept moving steadily, with ${f1(v)} hesitations per minute. That looks like you read the route well.`,
-    bad: (v, m) => `You hesitated ${m.hesitations} times (${f1(v)} per minute). Stopping while you're still on your arms to work out the next move burns strength without resting.`,
+    bad: (v, m) => `You hesitated ${plural(m.hesitations, 'time')} (${f1(v)} per minute), stopping mid-sequence to work out what to do.`,
+    cue: 'Read the route from the ground, and name your rest spots. On the wall, only stop at the rests you planned.',
     drill: 'Drill: "Route reading". Before you start, point out every hand move from the ground and mime the sequence. Then climb it without stopping, even if a move turns out wrong.',
+    target: (v) => `Fewer than ${f1(Math.max(0.5, stepUp(v, 0.5)))} hesitations per minute.`,
   },
   {
     key: 'handReadjustRate', category: 'flow', label: 'Grip readjustments',
     format: (v) => `${f1(v)} per hand move`, score: (v) => scale(v, 0.8, 0.1),
     what: 'How often a hand shuffled on a hold after grabbing it. Lower means more precise hand placement.',
+    why: 'Re-gripping wastes time and strength. It usually means you grabbed the hold before seeing where its best part is.',
     good: (v) => `You grabbed holds precisely (${f1(v)} readjustments per hand move).`,
-    bad: (v) => `You readjusted your grip ${f1(v)} times per hand move. Re-gripping costs strength and time.`,
-    drill: 'Drill: "One touch". Look at the exact spot on the hold you want to grab and grab it once, in the right place. If you touch a hold, you have to use it as you first grabbed it.',
+    bad: (v) => `You readjusted your grip ${f1(v)} times per hand move. You're grabbing first and finding the good part of the hold second.`,
+    cue: 'Look at the exact spot on the hold before you move, and grab it once.',
+    drill: 'Drill: "One touch". If you touch a hold, you have to use it exactly as you first grabbed it.',
+    target: (v) => `Under ${f1(Math.max(0.15, stepUp(v, 0.15)))} re-grips per hand move.`,
   },
 ];
 
 export const CATEGORIES = {
-  footwork: { label: 'Footwork', blurb: 'How much your feet move and how precisely you place them.' },
+  footwork: { label: 'Footwork', blurb: 'How much your feet move, whether they lead your hands, and how precisely you place them.' },
   arms: { label: 'Arm efficiency', blurb: 'Hanging on straight arms and pushing with your legs.' },
   body: { label: 'Body position', blurb: 'Hips over feet, and turning into the wall.' },
-  flow: { label: 'Flow', blurb: 'Smooth, direct and decisive movement.' },
+  flow: { label: 'Flow', blurb: 'Smooth, controlled, direct and decisive movement.' },
 };
 
 export function scoreLabel(s) {
@@ -120,63 +183,273 @@ export function scoreStatus(s) {
   return 'critical';
 }
 
-// Builds the full coaching report from analyze() output.
+// Which moves show a given problem (for evidence in the report).
+const MOVE_FLAGS = {
+  feetFirstRatio: (mv) => mv.feetBefore === 0,
+  footHandRatio: (mv) => mv.feetBefore === 0,
+  straightArmRatio: (mv) => isNum(mv.holdElbow) && mv.holdElbow < 110,
+  legDrive: (mv) => isNum(mv.legShare) && mv.legShare <= 0.35,
+  balanceOffset: (mv) => isNum(mv.balance) && mv.balance >= 0.7,
+  controlledRatio: (mv) => mv.jolt || mv.cut,
+  jerkyPerMin: (mv) => mv.jolt,
+  hesitationsPerMin: (mv) => mv.hesitated,
+  handReadjustRate: (mv) => mv.regrip === true,
+};
+
+// ---------- move-by-move review ----------
+
+export function reviewMove(mv) {
+  const good = [], bad = [], info = [];
+  if (mv.feetBefore > 0) good.push(mv.feetUp ? 'Stepped your feet up first' : 'Moved a foot first');
+  else bad.push('Reached without moving your feet first');
+  if (isNum(mv.holdElbow)) {
+    if (mv.holdElbow >= 145) good.push('Hung off a straight arm while reaching');
+    else if (mv.holdElbow < 110) bad.push(`Held on with a bent arm (${mv.holdElbow}°) while reaching`);
+  }
+  if (isNum(mv.legShare)) {
+    if (mv.legShare >= 0.6) good.push('Pushed up with your legs');
+    else if (mv.legShare <= 0.35) bad.push('Pulled up mostly with your arms');
+  }
+  if (isNum(mv.balance)) {
+    if (mv.balance <= 0.3) good.push('Hips over your feet at the start of the move');
+    else if (mv.balance >= 0.7) bad.push('Hips out to the side of your feet');
+  }
+  if (mv.hesitated || mv.setup > 4) bad.push(`Hesitated before the move (${f1(mv.setup)} s from the last hold)`);
+  if (mv.cut) bad.push('Feet cut loose');
+  else if (mv.jolt) bad.push('Arrived with a jolt or swing');
+  else good.push('Arrived in control');
+  if (mv.regrip === true) bad.push('Re-gripped the hold after grabbing it');
+  if (mv.dynamic) info.push('Dynamic move');
+  if (mv.reach >= 1.4) info.push('Long reach');
+  const rating = bad.length === 0 ? 'clean' : bad.length === 1 ? 'ok' : 'rough';
+  return { good, bad, info, rating };
+}
+
+// ---------- the full report ----------
+
 export function coach(result) {
   const m = result.metrics;
+  const moves = result.moves || [];
   const items = [];
   for (const def of METRIC_DEFS) {
     const v = m[def.key];
     const s = isNum(v) ? def.score(v) : null;
-    items.push({ key: def.key, category: def.category, label: def.label, value: v, display: isNum(v) ? def.format(v) : '—', score: s, what: def.what, info: !!def.info });
+    const flagged = MOVE_FLAGS[def.key] ? moves.filter(MOVE_FLAGS[def.key]).map((mv) => mv.n) : [];
+    items.push({
+      key: def.key, category: def.category, label: def.label, value: v,
+      display: isNum(v) ? def.format(v) : '—', score: s, info: !!def.info,
+      what: def.what, why: def.why, cue: def.cue, drill: def.drill,
+      target: isNum(v) ? def.target(v) : null,
+      text: isNum(v) ? ((isNum(s) ? s >= 60 : v >= 0.08) ? def.good(v, m) : def.bad(v, m)) : null,
+      moves: flagged,
+    });
   }
 
   const categories = {};
   for (const [key, cat] of Object.entries(CATEGORIES)) {
     const scored = items.filter((i) => i.category === key && isNum(i.score));
-    let wsum = 0, sum = 0;
-    for (const i of scored) { wsum += 1; sum += i.score; }
-    categories[key] = { label: cat.label, blurb: cat.blurb, score: wsum ? Math.round(sum / wsum) : null };
+    categories[key] = { label: cat.label, blurb: cat.blurb, score: scored.length ? Math.round(scored.reduce((a, i) => a + i.score, 0) / scored.length) : null };
   }
   const catScores = Object.values(categories).map((c) => c.score).filter(isNum);
   const overall = catScores.length ? Math.round(catScores.reduce((a, b) => a + b, 0) / catScores.length) : null;
 
   const strengths = [], improvements = [];
-  for (const def of METRIC_DEFS) {
-    const it = items.find((i) => i.key === def.key);
+  for (const it of items) {
     if (!isNum(it.score)) continue;
-    if (it.score >= 70) strengths.push({ key: def.key, label: def.label, score: it.score, text: def.good(it.value, m) });
-    else if (it.score < 50) improvements.push({ key: def.key, label: def.label, score: it.score, text: def.bad(it.value, m), drill: def.drill });
+    if (it.score >= 70) strengths.push({ key: it.key, label: it.label, score: it.score, text: it.text });
+    else if (it.score < 50) {
+      const evidence = it.moves.length && moves.length ? ` This happened on ${plural(it.moves.length, 'move')} (${list(it.moves)}).` : '';
+      improvements.push({ key: it.key, label: it.label, score: it.score, text: it.text + evidence, drill: it.drill, cue: it.cue, why: it.why, target: it.target, moves: it.moves });
+    }
   }
   strengths.sort((a, b) => b.score - a.score);
   improvements.sort((a, b) => a.score - b.score);
 
-  // Extra observations that are not scored.
+  // Move-by-move review.
+  const moveReview = moves.map((mv) => ({ ...mv, ...reviewMove(mv) }));
+  const clean = moveReview.filter((x) => x.rating === 'clean').length;
+  const rough = moveReview.filter((x) => x.rating === 'rough');
+  const best = [...moveReview].sort((a, b) => (b.good.length - b.bad.length) - (a.good.length - a.bad.length))[0];
+  const worst = [...moveReview].sort((a, b) => (b.bad.length - b.good.length) - (a.bad.length - a.good.length))[0];
+  const moveSummary = moveReview.length
+    ? `${plural(moveReview.length, 'hand move')} analysed: ${clean} clean, ${moveReview.length - clean - rough.length} with one issue, ${rough.length} with several.` +
+      (best && best.good.length > best.bad.length ? ` Your best was move #${best.n}: ${best.good.slice(0, 3).join(', ').toLowerCase()}.` : '') +
+      (worst && worst.bad.length >= 2 ? ` Move #${worst.n} needs the most work: ${worst.bad.slice(0, 3).join(', ').toLowerCase()}.` : '')
+    : null;
+
+  const sectionInsights = sectionAnalysis(result.sections || []);
+  const sideInsights = sideAnalysis(result.sides, m);
+  const extraInsights = extraAnalysis(result, m);
+
+  // Other observations (not scored).
   const notes = [];
   if (m.rests > 0) {
     notes.push(m.restStraightArm > 0
-      ? `You took ${m.rests} proper rest${m.rests > 1 ? 's' : ''} (4 s or longer), ${m.restStraightArm} of them on straight arms. That's good energy management.`
-      : `You took ${m.rests} rest${m.rests > 1 ? 's' : ''} of 4 s or longer, but with bent arms. When resting, straighten your arms and shake out one hand at a time.`);
+      ? `You took ${plural(m.rests, 'proper rest')} (4 s or longer), ${m.restStraightArm} of them on straight arms. That's good energy management.`
+      : `You took ${plural(m.rests, 'rest')} of 4 s or longer, but with bent arms. When resting, straighten your arms, sink your hips and shake out one hand at a time.`);
+  } else if (m.climbTime > 60) {
+    notes.push(`You climbed for ${Math.round(m.climbTime)} s without a proper rest. On longer routes, find a good hold or a no-hands stance and shake out before the hard section.`);
   }
-  const turn = METRIC_DEFS.find((d) => d.key === 'turnedShare');
-  if (isNum(m.turnedShare)) {
-    notes.push(m.turnedShare >= 0.08
-      ? turn.good(m.turnedShare, m)
-      : `${turn.bad(m.turnedShare, m)} ${turn.drill}`);
-  }
+  const turn = items.find((i) => i.key === 'turnedShare');
+  if (turn && isNum(turn.value)) notes.push(turn.value >= 0.08 ? turn.text : `${turn.text} ${turn.why} ${turn.cue}`);
+  if (m.dynos > 0) notes.push(`${plural(m.dynos, 'dynamic move')} detected (fast upward body motion).`);
+  if (m.falls > 0) notes.push('A fall or big drop was detected. The analysis covers the climbing up to your high point.');
   if (m.cameraMoved) notes.push('The camera moved during the video. The app compensated by tracking the rock in the background, but a fixed camera gives the most accurate results.');
-  if (m.dynos > 0) notes.push(`${m.dynos} dynamic move${m.dynos > 1 ? 's were' : ' was'} detected (fast upward body motion).`);
-  if (m.falls > 0) notes.push(`A fall or big drop was detected. The analysis covers the climbing up to your high point.`);
 
+  const actionPlan = buildActionPlan(improvements, sectionInsights, sideInsights, extraInsights);
+
+  // Summary paragraph.
   const cats = Object.entries(categories).filter(([, c]) => isNum(c.score));
-  const best = [...cats].sort((a, b) => b[1].score - a[1].score)[0];
-  const worst = [...cats].sort((a, b) => a[1].score - b[1].score)[0];
+  const bestCat = [...cats].sort((a, b) => b[1].score - a[1].score)[0];
+  const worstCat = [...cats].sort((a, b) => a[1].score - b[1].score)[0];
   let summary = 'Not enough of your body was tracked to score this climb.';
-  if (best && worst && best[0] !== worst[0]) {
-    summary = `Your strongest area was ${best[1].label.toLowerCase()} (${best[1].score}). The biggest opportunity is ${worst[1].label.toLowerCase()} (${worst[1].score}).`;
-  } else if (best) {
-    summary = `Overall ${scoreLabel(best[1].score).toLowerCase()} climbing in ${best[1].label.toLowerCase()}.`;
+  if (bestCat && worstCat && bestCat[0] !== worstCat[0]) {
+    summary = `Overall ${scoreLabel(overall).toLowerCase()} (${overall}). Your strongest area was ${bestCat[1].label.toLowerCase()} (${bestCat[1].score}), and the biggest opportunity is ${worstCat[1].label.toLowerCase()} (${worstCat[1].score}).`;
+  } else if (bestCat) {
+    summary = `Overall ${scoreLabel(overall).toLowerCase()} (${overall}).`;
   }
-  if (improvements[0]) summary += ` Focus next on: ${improvements[0].label.toLowerCase()}.`;
+  const fade = sectionInsights.find((x) => x.kind === 'fatigue');
+  if (fade) summary += ' Your technique slipped as the climb went on.';
+  if (actionPlan[0]) summary += ` Top priority for next time: ${actionPlan[0].title.toLowerCase()}.`;
 
-  return { overall, categories, items, strengths, improvements, notes, summary };
+  return { overall, categories, items, strengths, improvements, notes, summary, actionPlan, moveReview, moveSummary, sectionInsights, sideInsights, extraInsights };
+}
+
+// ---------- start / middle / top ----------
+
+function sectionAnalysis(sections) {
+  const out = [];
+  if (sections.length !== 3) return out;
+  const [a, , c] = sections;
+  const drops = [];
+  if (isNum(a.straightArm) && isNum(c.straightArm) && a.straightArm - c.straightArm >= 0.15) {
+    drops.push(`straight arms went from ${pct(a.straightArm)} at the start to ${pct(c.straightArm)} near the top`);
+  }
+  if (isNum(a.feetFirst) && isNum(c.feetFirst) && a.feetFirst - c.feetFirst >= 0.25) {
+    drops.push(`feet-first went from ${pct(a.feetFirst)} to ${pct(c.feetFirst)}`);
+  }
+  if (c.jolts - a.jolts >= 2) drops.push(`jolts went up from ${a.jolts} to ${c.jolts}`);
+  if (drops.length) {
+    out.push({
+      kind: 'fatigue', title: 'Technique faded near the top',
+      text: `Your technique got worse as you went up: ${drops.join('; ')}. This is the classic pattern of getting pumped. Tired arms bend and feet get lazy, which makes you even more tired.`,
+      advice: 'Take a proper shake-out rest before the last third, and focus hardest on straight arms and feet-first exactly when you start to feel tired. Also train endurance: climb laps of easy routes without coming off.',
+    });
+  }
+  if (isNum(a.setup) && isNum(c.setup) && c.setup > a.setup * 1.5 && c.setup - a.setup > 1) {
+    out.push({
+      kind: 'slowdown', title: 'You slowed down near the top',
+      text: `You took ${f1(a.setup)} s per move at the start but ${f1(c.setup)} s per move near the top. That's either the crux, fatigue, or not knowing the sequence up there.`,
+      advice: 'Study the top section from the ground before you start, and plan a rest just before it.',
+    });
+  }
+  const best = [...sections].filter((s) => isNum(s.straightArm)).sort((x, y) => y.straightArm - x.straightArm)[0];
+  if (!out.length && sections.every((s) => s.moves > 0)) {
+    out.push({ kind: 'steady', title: 'Consistent from start to top', text: 'Your technique held up well from start to top, with no clear drop-off in straight arms, footwork or control.', advice: best ? `Your cleanest section was the ${best.name.toLowerCase()}.` : '' });
+  }
+  const hes = sections.map((s) => s.hesitations);
+  const maxH = Math.max(...hes);
+  if (maxH >= 2) {
+    const where = sections[hes.indexOf(maxH)].name.toLowerCase();
+    out.push({ kind: 'hesitation', title: `Most hesitation in the ${where}`, text: `${plural(maxH, 'hesitation')} happened in the ${where} section. That's where you were least sure of the sequence.`, advice: `Next time, rehearse the ${where} moves from the ground (or on top rope) until you can say them out loud in order.` });
+  }
+  return out;
+}
+
+// ---------- left vs right ----------
+
+function sideAnalysis(sides, m) {
+  const out = [];
+  if (!sides) return out;
+  const imbalance = (o, what, advice) => {
+    const l = o.left, r = o.right, tot = l + r;
+    if (tot < 6) return;
+    const hi = l > r ? 'left' : 'right', lo = l > r ? 'right' : 'left';
+    if (Math.max(l, r) >= Math.min(l, r) * 2) {
+      out.push({ title: `Your ${hi} ${what} did most of the work`, text: `${what === 'hand' ? 'Hand' : 'Foot'} moves: left ${l}, right ${r}. Your ${lo} ${what} was fairly passive.`, advice });
+    }
+  };
+  imbalance(sides.footMoves, 'foot', 'A passive leg usually means you\'re missing footholds on that side. Before each move, look for a foothold for your quieter foot too.');
+  imbalance(sides.handMoves, 'hand', 'Leading with the same hand can mean you\'re matching a lot or avoiding moves on your weaker side. Practise reaching with the other hand on easy routes.');
+  const la = sides.arms?.left, ra = sides.arms?.right;
+  if (la && ra && Math.abs(la.bent - ra.bent) >= 0.3) {
+    const worse = la.bent > ra.bent ? 'left' : 'right';
+    out.push({
+      title: `Your ${worse} arm was locked off much more`,
+      text: `When holding still, your left arm was bent ${pct(la.bent)} of the time and your right arm ${pct(ra.bent)}. You're hanging on your ${worse} arm with a bent elbow.`,
+      advice: `Consciously straighten your ${worse} arm whenever you pause. If it's your weaker side, it will tire first.`,
+    });
+  }
+  const hs = sides.highSteps;
+  if (hs && hs.left + hs.right >= 2 && (hs.left === 0 || hs.right === 0)) {
+    const used = hs.left > 0 ? 'left' : 'right';
+    out.push({ title: `High steps only with your ${used} leg`, text: `All ${hs.left + hs.right} high steps were with your ${used} leg.`, advice: `Practise high steps with your ${used === 'left' ? 'right' : 'left'} leg too, since that flexibility often opens up easier sequences.` });
+  }
+  if (!out.length) out.push({ title: 'Balanced left and right', text: 'Both sides of your body did a similar amount of work, with no big imbalance.', advice: '' });
+  return out;
+}
+
+// ---------- extra observations ----------
+
+function extraAnalysis(result, m) {
+  const out = [];
+  const moves = result.moves || [];
+  const ex = result.extras || {};
+  if (m.feetCuts > 0) {
+    const cutMoves = moves.filter((x) => x.cut).map((x) => x.n);
+    out.push({
+      kind: 'feetCuts', title: 'Feet cutting loose', priority: 50 + m.feetCuts * 5,
+      text: `Your feet came off the rock ${plural(m.feetCuts, 'time')}${cutMoves.length ? ` (on move ${list(cutMoves)})` : ''}. Every cut means a swing you have to hold with your arms.`,
+      advice: 'Keep your core tight and actively pull your toes toward you on the footholds, especially on steep rock and long reaches.',
+      drill: 'Drill: "Toe hooks and toe pulls". On an overhang, practise moves while consciously pulling with your toes. If your feet cut, repeat the move.',
+    });
+  }
+  if (m.highSteps > 0) {
+    out.push({ kind: 'highSteps', title: 'High steps', text: `You used ${plural(m.highSteps, 'high step')}. High feet let you push up instead of pulling. Nice.`, advice: 'Keep looking for them, especially before long reaches.' });
+  } else if (moves.length >= 5) {
+    out.push({ kind: 'highSteps', title: 'No high steps', text: 'You didn\'t use any high steps (a foot brought up to around hip height).', advice: 'On vertical rock, bringing a foot high and rocking over it is often easier than pulling. Look for a high foothold before each long reach.' });
+  }
+  if (m.shakeOuts > 0) {
+    out.push({ kind: 'shakeOuts', title: 'Shake-outs and chalking', text: `You dropped a hand to shake out or chalk ${plural(m.shakeOuts, 'time')}.`, advice: 'Do it on good holds with a straight arm, and shake out each hand for a few seconds, not just a quick dip.' });
+  } else if (m.climbTime > 45) {
+    out.push({ kind: 'shakeOuts', title: 'No shake-outs', text: `You never dropped a hand to shake out or chalk during ${Math.round(m.climbTime)} s of climbing.`, advice: 'On longer climbs, shake out on the good holds before you get pumped, not after.' });
+  }
+  if (isNum(m.stanceWidth)) {
+    if (m.stanceWidth < 0.35) out.push({ kind: 'stance', title: 'Narrow stance', text: `Your feet were usually close together (${f1(m.stanceWidth)} torso lengths apart).`, advice: 'A slightly wider stance gives you a more stable base and makes it easier to shift your hips over either foot.' });
+    else if (m.stanceWidth > 1.3) out.push({ kind: 'stance', title: 'Very wide stance', text: `Your feet were often very far apart (${f1(m.stanceWidth)} torso lengths).`, advice: 'Wide stems are great for resting in corners, but on a face they make it hard to move. Bring your feet under you more.' });
+  }
+  if (isNum(m.avgSetup) && moves.length >= 3) {
+    out.push({ kind: 'pace', title: 'Pace', text: `You averaged ${f1(m.avgSetup)} s between arriving at one hold and leaving for the next, and made ${f1(m.movesPerMin || 0)} hand moves per minute.`, advice: m.avgSetup > 3 ? 'That\'s quite slow. Unless you\'re resting, aim to keep moving: time on the wall costs grip even when you\'re standing still.' : 'That\'s a good, steady pace.' });
+  }
+  return out;
+}
+
+// ---------- action plan ----------
+
+const PRIORITY_WEIGHT = { footwork: 1.1, arms: 1.05, body: 1, flow: 0.95 };
+
+function buildActionPlan(improvements, sectionInsights, sideInsights, extraInsights) {
+  const cands = improvements.map((i) => ({
+    // Core technique (feet, arms) comes before flow when problems are equally bad.
+    key: i.key, title: i.label, priority: (100 - i.score) * (PRIORITY_WEIGHT[METRIC_DEFS.find((d) => d.key === i.key)?.category] || 1),
+    saw: i.text, why: i.why, doThis: i.cue, drill: i.drill, target: i.target, moves: i.moves,
+  }));
+  const fade = sectionInsights.find((x) => x.kind === 'fatigue');
+  if (fade) cands.push({ title: 'Staying efficient when tired', priority: 55, saw: fade.text, why: 'Most falls happen in the last third of a route, when technique slips under fatigue.', doThis: fade.advice, drill: 'Drill: "Pump laps". Climb an easy route 3 times in a row without resting, focusing on perfect straight arms and footwork on the last lap.', target: 'Keep straight arms and feet-first at the same level in the top third as at the start.' });
+  const cuts = extraInsights.find((x) => x.kind === 'feetCuts');
+  if (cuts) cands.push({ title: 'Keeping your feet on', priority: cuts.priority, saw: cuts.text, why: 'Feet cutting loose throws all your weight onto your fingers at once. It\'s one of the most common reasons to fall off a hold you actually reached.', doThis: cuts.advice, drill: cuts.drill, target: 'No feet cutting loose on routes at or below your level.' });
+  const side = sideInsights.find((x) => x.advice && /did most of the work|locked off/.test(x.title));
+  if (side) cands.push({ title: side.title, priority: 35, saw: side.text, why: 'Imbalances mean one side tires first, and they often hide easier sequences on the other side.', doThis: side.advice, drill: '', target: 'Closer to an even split between left and right.' });
+  // "Feet first" and "feet per hand move" say the same thing; keep the more actionable
+  // "feet first" wording at the higher of the two priorities.
+  const ff = cands.find((c) => c.key === 'feetFirstRatio'), fh = cands.find((c) => c.key === 'footHandRatio');
+  if (ff && fh) { ff.priority = Math.max(ff.priority, fh.priority); cands.splice(cands.indexOf(fh), 1); }
+  // One item per theme.
+  const seen = new Set();
+  return cands.sort((a, b) => b.priority - a.priority).filter((c) => {
+    const theme = c.key === 'feetFirstRatio' || c.key === 'footHandRatio' ? 'feet' : c.key || c.title;
+    if (seen.has(theme)) return false;
+    seen.add(theme);
+    return true;
+  }).slice(0, 3);
 }
