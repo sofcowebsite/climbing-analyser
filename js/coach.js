@@ -358,19 +358,22 @@ function trendNote(it, H, k = 0) {
 // ---------- the coaches ----------
 // Each analysis level is presented as its own coach: how carefully the video is tracked, and
 // how much of the report is shown up front. Pick one in Settings or before analysing.
+// The names are a light-hearted nod to well-known climbing YouTubers/coaches (first name
+// only, playful, not an endorsement or affiliation) — the internal ids (pip/rowan/sage) are
+// unchanged so saved sessions still match up to a coach after a rename.
 export const COACHES = {
   pip: {
-    id: 'pip', name: 'Pip', role: 'Quick look', quality: 'fast', level: 'simple',
+    id: 'pip', name: 'Magnus', role: 'Quick look', quality: 'fast', level: 'simple',
     speed: 'Fastest', detail: 'Short and simple',
     blurb: 'A fast check with a short, plain report: how it went, the one thing to work on, and what you did well. Less accurate on small or partly hidden climbers.',
   },
   rowan: {
-    id: 'rowan', name: 'Rowan', role: 'All-round coach', quality: 'accurate', level: 'standard',
+    id: 'rowan', name: 'Alex', role: 'All-round coach', quality: 'accurate', level: 'standard',
     speed: 'Balanced', detail: 'Clear, with detail on request',
     blurb: 'Accurate tracking at a sensible speed. A clear report with a three-point plan; the technical extras are tucked away under "More detail".',
   },
   sage: {
-    id: 'sage', name: 'Sage', role: 'Deep dive', quality: 'max', level: 'expert',
+    id: 'sage', name: 'Eric', role: 'Deep dive', quality: 'max', level: 'expert',
     speed: 'About 3× slower', detail: 'Everything, with all the numbers',
     blurb: 'The most accurate tracking (best for hidden legs and far-away climbers) and the full report: every measurement, the movement timeline and all the numbers.',
   },

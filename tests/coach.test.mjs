@@ -128,7 +128,7 @@ test('old or broken history entries are ignored', () => {
 test('each coach gives its own short summary', () => {
   const r = climb(2, 'barnDoor');
   const pip = coach(r, { coach: 'pip' }), rowan = coach(r, { coach: 'rowan' }), sage = coach(r, { coach: 'sage' });
-  assert.equal(pip.coach, 'pip'); assert.equal(sage.take.name, 'Sage');
+  assert.equal(pip.coach, 'pip'); assert.equal(sage.take.name, 'Eric');
   for (const c of [pip, rowan, sage]) {
     assert.ok(c.take.lines.length >= 2);
     assert.match(c.take.lines[0], /came off at/);
