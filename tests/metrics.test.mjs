@@ -290,3 +290,18 @@ test('movement labels: a fall window is labelled as a failed contact, not a stab
   assert.ok(sg);
   assert.notEqual(sg.labels.balance_proxy, 'stable');
 });
+
+test('a long whole-body left/right swap starting mid-move is undone', () => {
+  const clean = makeClimb({ cycles: 8 });
+  // The model flips the whole body for 1.5 s, starting while a hand is moving (t ≈ 6.2 s).
+  const all = [[1, 4], [2, 5], [3, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16], [17, 18], [19, 20], [21, 22], [23, 24], [25, 26], [27, 28], [29, 30], [31, 32]];
+  const flipped = clean.map((f) => {
+    if (f.t < 6.2 || f.t > 7.7) return f;
+    const p = f.p.map((q) => q.slice());
+    for (const [l, r] of all) [p[l], p[r]] = [p[r], p[l]];
+    return { ...f, p };
+  });
+  const fixed = fixLeftRight(flipped);
+  assert.ok(fixed.every((f, i) => f.p[15][0] === clean[i].p[15][0] && f.p[28][0] === clean[i].p[28][0]));
+  assert.equal(analyze(flipped).metrics.handMoves, 8);
+});

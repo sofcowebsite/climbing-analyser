@@ -23,9 +23,12 @@ const BONES = [
 const BONE_PAIR = { '11-13': '12-14', '13-15': '14-16', '23-25': '24-26', '25-27': '26-28', '27-29': '28-30', '27-31': '28-32' };
 
 const LR_GROUPS = {
-  arms: [[11, 12], [13, 14], [15, 16]],
-  legs: [[23, 24], [25, 26], [27, 28], [29, 30], [31, 32]],
+  torso: [[11, 12], [23, 24]],
+  arms: [[13, 14], [15, 16]],
+  legs: [[25, 26], [27, 28], [29, 30], [31, 32]],
 };
+// Every left/right landmark pair (face, hands and feet included), for whole-body swaps.
+const ALL_PAIRS = [[1, 4], [2, 5], [3, 6], [7, 8], [9, 10], [11, 12], [13, 14], [15, 16], [17, 18], [19, 20], [21, 22], [23, 24], [25, 26], [27, 28], [29, 30], [31, 32]];
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -50,15 +53,40 @@ function smoothArr(arr, win) {
   });
 }
 
-// Keeps left/right labels consistent over time (per body part). Returns new frames.
+/**
+ * Keeps left/right labels consistent. Pose models often can't tell left from right on a
+ * climber seen from behind, and can swap the whole body for seconds at a time.
+ *  1. Anchor: when the shoulders are square to the camera, the climber (facing the wall) has
+ *     their left shoulder on the image's left. Frames that disagree get the whole body swapped.
+ *  2. Continuity: arms and legs (and the torso when it's turned side-on, where the anchor
+ *     can't be used) are swapped if that matches the previous frame much better. This
+ *     catches partial swaps, e.g. just the legs.
+ * Returns new frames (input untouched).
+ */
 export function fixLeftRight(frames) {
+  const widths = [];
+  for (const f of frames) {
+    if (!f.p || !f.p[11] || !f.p[12]) continue;
+    if (Math.min(f.p[11][2], f.p[12][2]) >= 0.5) widths.push(Math.abs(f.p[11][0] - f.p[12][0]));
+  }
+  widths.sort((a, b) => a - b);
+  const typical = widths.length ? widths[Math.floor(widths.length * 0.75)] : 0;
+
   const out = [];
   let prev = null;
   for (const f of frames) {
     if (!f.p) { out.push(f); continue; }
     const p = f.p.map((q) => (q ? q.slice() : q));
+    let anchored = false;
+    const ls = p[11], rs = p[12], lh = p[23], rh = p[24];
+    if (typical > 0 && ls && rs && Math.min(ls[2], rs[2]) >= 0.5 && Math.abs(ls[0] - rs[0]) >= typical * 0.5) {
+      anchored = true;
+      const hipsAgree = !(lh && rh && Math.min(lh[2], rh[2]) >= 0.5) || (lh[0] > rh[0]) === (ls[0] > rs[0]);
+      if (ls[0] > rs[0] && hipsAgree) for (const [l, r] of ALL_PAIRS) if (p[l] && p[r]) [p[l], p[r]] = [p[r], p[l]];
+    }
     if (prev) {
-      for (const pairs of Object.values(LR_GROUPS)) {
+      for (const [name, pairs] of Object.entries(LR_GROUPS)) {
+        if (name === 'torso' && anchored) continue;
         let keep = 0, swap = 0, n = 0;
         for (const [l, r] of pairs) {
           if (!p[l] || !p[r] || !prev[l] || !prev[r]) continue;
@@ -67,7 +95,11 @@ export function fixLeftRight(frames) {
           swap += dist(p[l], prev[r]) + dist(p[r], prev[l]);
           n++;
         }
-        if (n && swap < keep * 0.8) for (const [l, r] of pairs) [p[l], p[r]] = [p[r], p[l]];
+        if (n && swap < keep * 0.8) {
+          // A torso swap (only when side-on) takes the whole body with it.
+          const pairsToSwap = name === 'torso' ? ALL_PAIRS : pairs;
+          for (const [l, r] of pairsToSwap) if (p[l] && p[r]) [p[l], p[r]] = [p[r], p[l]];
+        }
       }
     }
     prev = p;
