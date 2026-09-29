@@ -432,3 +432,18 @@ table.data .what { display: block; color: var(--muted); font-size: 12px; }
 .field-label { display: block; font-size: 14px; font-weight: 600; margin: 14px 0 6px; }
 .field-help { font-size: 13px; color: var(--muted); margin: 6px 0 0; }
 .more-detail > summary { font-weight: 650; }
+
+/* ---------- report chapters ---------- */
+/* Cards inside a report need spacing wherever the report is shown (fresh result or history). */
+.report > * + *, .chapter > * + * { margin-top: 14px; }
+.report > .chapter { margin-top: 30px; }
+.chapter-head { scroll-margin-top: 70px; padding: 0 2px; }
+.chapter-head h2 { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 20px; }
+.chapter-head p { margin: 4px 0 0 36px; }
+.chapter-num {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 26px; height: 26px; border-radius: 50%; font-size: 14px; font-weight: 700;
+  background: var(--accent-wash); color: var(--accent);
+}
+.chapter-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.chapter-nav .chip { font: inherit; font-size: 14px; color: var(--ink); cursor: pointer; }
