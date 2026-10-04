@@ -126,7 +126,8 @@ export function trimCameraApproach(frames, { factor = 1.3, rate = 1.08, maxShare
   if (n < 10) return none;
   const size = frames.map((f) => {
     const p = f.p;
-    if (!p || Math.min(p[11][2], p[12][2], p[23][2], p[24][2]) < 0.5) return NaN;
+    // Only confident detections: junk right by the lens often sits at about 0.5.
+    if (!p || Math.min(p[11][2], p[12][2], p[23][2], p[24][2]) < 0.6) return NaN;
     return dist(mid(p[11], p[12]), mid(p[23], p[24]));
   });
   const good = size.map((v, i) => [v, i]).filter(([v]) => isNum(v));
@@ -136,9 +137,13 @@ export function trimCameraApproach(frames, { factor = 1.3, rate = 1.08, maxShare
   // Typical climbing size: the middle half of the video.
   const midVals = good.filter(([, i]) => i >= n * 0.25 && i <= n * 0.75).map(([v]) => v);
   const ref = median(midVals.length >= 5 ? midVals : good.map(([v]) => v));
-  // Smooth a little so a single bad frame doesn't decide anything (sm1: over about a second).
+  // Smooth a little so a single bad frame doesn't decide anything. sm1 is a rolling median
+  // over about a second, so a few junk detections can't drag it around.
   const sm = smoothArr(size, 5);
-  const sm1 = smoothArr(size, 2 * k + 1);
+  const sm1 = size.map((v, i) => {
+    const w = size.slice(Math.max(0, i - k), Math.min(n, i + k + 1)).filter(isNum);
+    return w.length >= Math.max(2, k / 2) ? median(w) : NaN;
+  });
   const limit = Math.floor(n * maxShare);
   const firstSeen = good[0][1], lastSeen = good[good.length - 1][1];
 
@@ -175,10 +180,15 @@ export function trimCameraApproach(frames, { factor = 1.3, rate = 1.08, maxShare
       i = next;
     }
     while (!isNum(sm1[i]) && i !== pk) i += dir;
-    // A real approach makes the person at least 1.5x bigger, quickly (on average 15%+ per
-    // second); a zoom, a lean or stepping closer to film doesn't.
+    // A real approach makes the person at least 1.5x bigger. At the end it must also be quick
+    // (on average 15%+ per second) and run into the end of the video, because someone filming
+    // may zoom in or step closer during the last moves. At the start, a big person shrinking
+    // away in the first few seconds is walking from the phone to the wall, often slowly
+    // (standing, chalking, sitting down for the start), so the speed isn't checked there.
     const secs = Math.abs(pk - i) * dt;
-    if (!isNum(sm1[i]) || sm1[pk] < sm1[i] * 1.5 || secs < 0.3 || Math.log(sm1[pk] / sm1[i]) / secs < Math.log(rate) * 2) return dir > 0 ? lastSeen : firstSeen;
+    const quick = secs >= 0.3 && Math.log(sm1[pk] / sm1[i]) / secs >= Math.log(rate) * 2;
+    const early = dir < 0 && Math.abs(pk - edge) * dt <= 3;
+    if (!isNum(sm1[i]) || sm1[pk] < sm1[i] * 1.5 || !(quick || early)) return dir > 0 ? lastSeen : firstSeen;
     return i;
   };
   const start = Math.max(firstSeen, approach(-1)), end = Math.min(lastSeen, approach(1));

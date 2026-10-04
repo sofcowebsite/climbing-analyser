@@ -64,6 +64,10 @@ The labels follow an observational framework for climbing video: short multi-lab
 
 It also detects rests, dynamic moves and falls. Thresholds and scoring rules live in `js/metrics.js` (`CFG`) and `js/coach.js` (`METRIC_DEFS`).
 
+## Checked on real videos
+
+Besides the synthetic tests, the analysis has been checked frame by frame against real indoor board videos (handheld phone that pans, tilts and zooms; climbers walking to and from the phone; a second person in shot; a climber half out of frame at the start). On those, the pose tracking itself held up well, and the fixes went into what comes after it: cutting the walk to and from the phone, finding when the climb really starts, not counting drops before the climb as falls, and telling a settled let-go from the top apart from a fall. Each case has a synthetic regression test. The reference videos and their pose tracks are not stored in this repository.
+
 ## Limitations
 
 - It works from a 2D picture, so it can't see the distance from your hips to the wall, the wall angle, or the holds.

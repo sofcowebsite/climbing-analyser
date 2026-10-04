@@ -481,3 +481,14 @@ test('points the model places outside the picture count as unseen', () => {
   assert.ok(r.ok);
   assert.ok(r.metrics.handMoves <= analyze(climb).metrics.handMoves + 1, 'no invented moves from off-screen points');
 });
+
+test('a slow walk from the phone to the wall at the start is cut off', () => {
+  const climb = makeClimb({ cycles: 6 });
+  const first = climb[0];
+  // 5 s from right by the lens (2.5x bigger) to the wall: about 18% smaller each second.
+  const lead = [];
+  for (let i = 0; i < 50; i++) { const f = 1 - i / 50; lead.push({ t: i / 10, p: approach(first.p, 1 + 1.5 * f, f) }); }
+  const r = analyze([...lead, ...climb.map((fr) => ({ ...fr, t: fr.t + 5 }))]);
+  assert.ok(r.metrics.trimmedStart >= 2.5, `trimmed start ${r.metrics.trimmedStart}`);
+  assert.equal(r.falls.length, 0);
+});
