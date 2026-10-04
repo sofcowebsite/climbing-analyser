@@ -107,7 +107,7 @@ export function renderReport(container, session, opts = {}) {
   // chapter here and the chapters are assembled at the end.
   // where: a chapter name, or [chapter, rank] to order sections within it (lower first; ties
   // keep the order they were added).
-  const parts = { summary: [], climb: [], coaching: [], progress: [], details: [] };
+  const parts = { summary: [], climb: [], compare: [], coaching: [], progress: [], details: [] };
   const put = (where, tier, el) => {
     const [chapter, rank = 50] = Array.isArray(where) ? where : [where];
     if (!el) return;
@@ -217,6 +217,38 @@ export function renderReport(container, session, opts = {}) {
         onWatchVideo: canSeek ? (t) => opts.onSeek(t, 0.5) : null,
       }));
     }
+  }
+
+  // ----- this attempt vs an earlier attempt at the same climb -----
+  const cmp = r.comparison;
+  if (cmp) {
+    const prevS = (opts.history || []).find((x) => x.id === cmp.prev.id);
+    const shot = (src, label, sub) => h('figure', { class: 'attempt' },
+      src ? h('img', { src, alt: label }) : h('div', { class: 'attempt-blank', text: 'No picture' }),
+      h('figcaption', {}, h('strong', { text: label }), h('span', { class: 'muted small', text: sub })));
+    const arrow = (b) => (b === true ? h('span', { class: 'chg chg-up', text: '▲ better' }) : b === false ? h('span', { class: 'chg chg-down', text: '▼ worse' }) : h('span', { class: 'muted', text: '–' }));
+    put('compare', 1, card('Side by side',
+      h('div', { class: 'attempts' },
+        shot(prevS?.thumb, 'Earlier attempt', cmp.prev.createdAt ? fmtDate(cmp.prev.createdAt) : ''),
+        shot(session.thumb, 'This attempt', fmtDate(session.createdAt))),
+      h('p', { class: 'cmp-headline', text: cmp.headline }),
+      h('div', { class: 'table-wrap' }, h('table', { class: 'data' },
+        h('thead', {}, h('tr', {}, h('th', { text: '' }), h('th', { class: 'num', text: 'Earlier' }), h('th', { class: 'num', text: 'This time' }), h('th', { class: 'num', text: '' }))),
+        h('tbody', {}, cmp.facts.map((f) => h('tr', {},
+          h('td', { text: f.label }), h('td', { class: 'num', text: f.before }), h('td', { class: 'num', text: f.now }), h('td', { class: 'num' }, arrow(f.better))))),
+      )),
+      cmp.caveats.length ? h('p', { class: 'muted small', text: cmp.caveats.join(' ') }) : null,
+      prevS && opts.onOpen ? h('button', { type: 'button', class: 'btn btn-small', text: 'Open the earlier attempt', onclick: () => opts.onOpen(prevS.id) }) : null,
+    ));
+    const listOf = (title, items, cls) => (items.length ? [h('h4', { text: title }), h('ul', { class: `ticks ${cls}` }, items.map((x) => h('li', { text: x.text })))] : []);
+    put('compare', 1, card('What changed, and what to do next',
+      ...listOf('Better this time', cmp.better, 'good'),
+      ...listOf('Worse this time', cmp.worse, 'bad'),
+      ...listOf('The same on both attempts', cmp.still, 'bad'),
+      !cmp.better.length && !cmp.worse.length && !cmp.still.length ? h('p', { class: 'muted', text: 'No clear differences in technique between the two attempts.' }) : null,
+      h('h4', { text: 'On your next attempt' }),
+      h('ol', { class: 'next-steps' }, cmp.advice.map((x) => h('li', { text: x }))),
+    ));
   }
 
   // ----- action plan (filed under coaching after "what you did well") -----
@@ -551,6 +583,8 @@ export function renderReport(container, session, opts = {}) {
       ended === 'fell' ? `You came off ${nFalls > 1 ? `${word(nFalls)} times` : 'once'}. Here's what happened on the wall, and why.`
         : ended === 'topped' || ended === 'finished' ? 'You made it. Here\'s how the climb unfolded, from the start to the top.'
           : 'What happened on the wall, from start to finish.'],
+    ['compare', 'Vs your earlier attempt',
+      cmp ? { better: 'This attempt went better. Here\'s what changed.', worse: 'This one didn\'t go as well. Here\'s what changed, and how to get it back.', mixed: 'Some things got better and some slipped. Here\'s which, and what to do about it.', same: 'The two attempts were very similar. Here\'s how they line up.' }[cmp.verdict] : ''],
     ['coaching', 'Your coaching',
       `${nGood ? `${nGood === 1 ? 'One thing' : `${word(nGood).replace(/^./, (c) => c.toUpperCase())} things`} you did well` : 'How your technique looked'}, then ${nPlan ? (nPlan === 1 ? 'the one change that would help most' : `the ${word(nPlan)} changes that would help most`) : 'what to work on'}.`],
     ['progress', 'Your progress',

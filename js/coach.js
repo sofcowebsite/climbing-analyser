@@ -1,5 +1,6 @@
 import { FALL_CAUSES } from './falladvice.js';
 import { metres } from './outcome.js';
+import { compareAttempts } from './compare.js';
 
 // Turns measurements into scores (0-100) and detailed, plain-language coaching:
 // a per-area breakdown, a move-by-move review, how technique changed from start to top,
@@ -424,6 +425,16 @@ function coachTake(rep, coachId) {
     lines.push(`You came off at ${lastFall.clock}${lastFall.move ? ` on move ${lastFall.move.n}` : ''}.${why ? ` It looks like ${why}.` : ' The video doesn\'t show one clear reason.'}`);
   } else if (oc) lines.push(simple ? 'I couldn\'t tell for sure how the climb ended. You can set the result below.' : 'The video doesn\'t show clearly how the climb ended, so check the result below.');
 
+  // Compared with an earlier attempt at this climb: the headline, plus the main thing that changed.
+  const cmp = rep.comparison;
+  if (cmp) {
+    lines.push(`Compared with your earlier attempt: ${lower1(cmp.headline)}`);
+    if (!simple) {
+      const up = cmp.better.find((x) => !x.key.startsWith('fall:')), down = cmp.worse.find((x) => !x.key.startsWith('fall:'));
+      if (up || down) lines.push([up ? `Better: ${lower1(up.text.split(':')[0])}` : null, down ? `worse: ${lower1(down.text.split(':')[0])}` : null].filter(Boolean).join('; ').replace(/^./, (c) => c.toUpperCase()) + '.');
+    }
+  }
+
   const good = rep.strengths.find((s) => s.tag === 'fixed') || rep.strengths.find((s) => s.tag !== 'steady') || rep.strengths[0];
   if (good) {
     if (good.key === 'habits') {
@@ -556,7 +567,9 @@ function confidenceFor(it, m, nMoves) {
 
 // history: earlier saved sessions ({ createdAt, report }), used to vary the coaching.
 // coach: which coach presents it (see COACHES). venue: 'outdoor' | 'indoor'.
-export function coach(result, { history, coach: coachId = 'rowan', venue = result.venue || null } = {}) {
+// compareWith: an earlier attempt at the same climb (a saved session) to compare against.
+// outcome: the result the climber set by hand for this climb ('sent' | 'fell' | 'attempt'), if any.
+export function coach(result, { history, coach: coachId = 'rowan', venue = result.venue || null, compareWith = null, outcome: userOutcome = null } = {}) {
   const m = result.metrics;
   const moves = result.moves || [];
   const H = historyIndex(history);
@@ -714,6 +727,12 @@ export function coach(result, { history, coach: coachId = 'rowan', venue = resul
   const movement = movementAnalysis(result.labels, H);
 
   const rep = { overall, categories, items, strengths, improvements, notes, summary, actionPlan, moveReview, movePatterns: movePatternsList, moveSummary, sectionInsights, sideInsights, extraInsights, outcome, fallAnalyses, reliability, movement, sinceLast: sinceLast.list, sinceLastHeadline: sinceLast.headline, venue, coach: COACHES[coachId] ? coachId : 'rowan' };
+  if (compareWith) {
+    rep.comparison = compareAttempts(
+      { analysis: result, report: rep, outcome: userOutcome },
+      { analysis: compareWith.analysis, report: compareWith.report, outcome: compareWith.outcomeSource === 'user' ? compareWith.outcome : null, id: compareWith.id, name: compareWith.name, createdAt: compareWith.createdAt },
+    );
+  }
   rep.take = coachTake(rep, rep.coach);
   return rep;
 }

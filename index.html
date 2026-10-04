@@ -45,7 +45,7 @@
             <li><strong>Keep the camera as still as you can.</strong> A tripod or a rock works best. Slow pans to follow the climber, and getting smaller as the climber moves away, are compensated for. Just avoid sudden zooms.</li>
             <li><strong>Keep the climber's whole body in view,</strong> feet included.</li>
             <li><strong>Mind the light.</strong> Avoid filming into the sun or against bright sky. Clothing that contrasts with the rock helps a lot.</li>
-            <li><strong>Tap the climber</strong> before analysing, so the belayer or other climbers aren't tracked by mistake.</li>
+            <li><strong>Other people in shot?</strong> Under "Optional" you can point out the climber, so the belayer isn't tracked by mistake. Otherwise the app follows the person highest on the wall.</li>
           </ul>
         </details>
       </div>
@@ -53,13 +53,18 @@
       <div id="video-area" hidden></div>
 
       <div id="setup-step" hidden>
-        <div class="card">
-          <h3>Select the climber</h3>
-          <p class="muted small" id="pick-status">Scrub to the start of the climb, then tap the climber. This matters when they're far away or other people (like the belayer) are in shot.</p>
-          <button class="btn btn-block" id="pick-btn" type="button">Tap to select climber</button>
-        </div>
-        <div class="card">
-          <h3>Trim to the climb <span class="muted small">(optional)</span></h3>
+        <details class="card optional-box" id="fine-tune">
+          <summary>Optional: point out the climber or trim the video</summary>
+          <p class="muted small">You can skip this. The app finds the climber by itself (the person highest on the wall) and analyses the whole video.</p>
+
+          <h4>Point out the climber</h4>
+          <p class="muted small" id="pick-status">Only needed if other people (like the belayer) are in the video. Tap the button, then tap the climber in the picture.</p>
+          <div class="btn-row">
+            <button class="btn" id="pick-btn" type="button">Select the climber</button>
+            <button class="btn btn-link small" id="pick-clear" type="button" hidden>Clear</button>
+          </div>
+
+          <h4 style="margin-top:16px">Trim to the climb</h4>
           <p class="muted small">Play or scrub the video, then set where the climb starts and ends.</p>
           <div class="trim-row">
             <div>
@@ -76,7 +81,7 @@
             <button class="btn btn-small" id="set-end">Set to current</button>
           </div>
           <button class="btn btn-link small" id="reset-trim">Reset trim</button>
-        </div>
+        </details>
 
         <div class="card">
           <h3>How to analyse it</h3>
@@ -89,6 +94,13 @@
           <span class="field-label">Your coach</span>
           <div class="coach-compact" id="coach-pick-setup" role="radiogroup" aria-label="Your coach"></div>
           <p class="field-help" id="coach-help-setup"></p>
+        </div>
+
+        <div class="card" id="compare-card" hidden>
+          <h3>Compare with an earlier attempt <span class="muted small">(optional)</span></h3>
+          <p class="muted small">Tried this climb before? Pick that attempt and the report will show what you did better, what got worse and what to change next time.</p>
+          <div class="compare-list" id="compare-list" role="radiogroup" aria-label="Earlier attempt to compare with"></div>
+          <button class="btn btn-link small" id="compare-more" type="button" hidden></button>
         </div>
 
         <form class="card" id="details-form" autocomplete="off">

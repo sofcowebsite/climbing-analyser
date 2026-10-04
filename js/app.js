@@ -43,7 +43,8 @@ let currentFile = null;
 let trim = { start: 0, end: null };
 let pick = null; // where the user tapped the climber: { x, y, t } (0..1 coords)
 let abort = null;
-const PICK_HELP = 'Scrub to the start of the climb, then tap the climber. This matters when they\'re far away or other people (like the belayer) are in shot.';
+const PICK_HELP = 'Only needed if other people (like the belayer) are in the video. Tap the button, then tap the climber in the picture.';
+let compareTo = null; // id of an earlier attempt to compare this climb with (optional)
 
 function step(name) {
   for (const s of ['pick', 'setup', 'progress', 'result']) $(`${s}-step`).hidden = s !== name;
@@ -112,16 +113,77 @@ async function openVideo(file) {
   }
   trim = { start: 0, end: null };
   updateTrimLabels();
-  pick = null;
-  $('pick-status').textContent = PICK_HELP;
-  $('pick-btn').textContent = 'Tap to select climber';
+  resetPick();
+  $('fine-tune').open = false;
   const form = $('details-form');
   form.reset();
   $('grade-scale').value = settings.gradeScale || 'v';
   updateGradeOptions();
   const base = file.name ? file.name.replace(/\.[^.]+$/, '') : '';
   form.elements.name.value = /^(IMG|VID|MOV|RPReplay|trim)[_-]?\d/i.test(base) || !base ? '' : base;
+  compareTo = null;
+  renderComparePicker(await upgradeAll(await store.listSessions()));
 }
+
+// ---------- optional: point out the climber ----------
+
+function resetPick() {
+  pick = null;
+  player?.cancelPick();
+  player?.setMarker(null);
+  $('pick-status').textContent = PICK_HELP;
+  $('pick-btn').textContent = 'Select the climber';
+  $('pick-clear').hidden = true;
+}
+
+// ---------- optional: compare with an earlier attempt ----------
+
+const sameName = (a, b) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+let compareSessions = [];
+let compareShowAll = false;
+function renderComparePicker(sessions = compareSessions) {
+  compareSessions = sessions;
+  const card = $('compare-card');
+  card.hidden = !sessions.length;
+  if (!sessions.length) return;
+  const name = $('details-form').elements.name.value;
+  // Climbs with the same name first (most likely the same route), then newest first.
+  const sorted = [...sessions].sort((a, b) => (sameName(b.name, name) - sameName(a.name, name)) || b.createdAt - a.createdAt);
+  const LIMIT = 4;
+  const visible = compareShowAll ? sorted : sorted.slice(0, LIMIT);
+  // Keep the chosen one visible even when the list is shortened.
+  const chosen = sorted.find((x) => x.id === compareTo);
+  if (chosen && !visible.includes(chosen)) visible.push(chosen);
+  const option = (id, body) => {
+    const input = h('input', { type: 'radio', name: 'compare', value: id || '' });
+    input.checked = (id || null) === compareTo;
+    input.addEventListener('change', () => { compareTo = id || null; renderComparePicker(); });
+    return h('label', { class: `compare-option${input.checked ? ' selected' : ''}` }, input, body);
+  };
+  const list = $('compare-list');
+  list.replaceChildren(
+    option(null, h('div', { class: 'compare-info' }, h('div', { class: 'title', text: 'Don\'t compare' }), h('div', { class: 'meta', text: 'Analyse this climb on its own.' }))),
+    ...visible.map((s) => option(s.id, h('div', { class: 'compare-body' },
+      s.thumb ? h('img', { class: 'compare-thumb', src: s.thumb, alt: `Frame from ${s.name || 'this climb'}` }) : h('div', { class: 'compare-thumb' }),
+      h('div', { class: 'compare-info' },
+        h('div', { class: 'title', text: s.name || 'Untitled climb' }),
+        h('div', { class: 'meta', text: [fmtDate(s.createdAt), s.grade, s.outcome === 'sent' ? 'Sent' : s.outcome === 'fell' ? 'Fell' : null, s.report?.overall != null ? `score ${s.report.overall}` : null].filter(Boolean).join(' · ') }),
+        sameName(s.name, name) ? h('span', { class: 'pill', text: 'Same name' }) : null,
+      ),
+    ))),
+  );
+  // A bigger look at the chosen attempt, to check it's the same climb.
+  if (chosen?.thumb) {
+    list.append(h('figure', { class: 'compare-preview' },
+      h('img', { src: chosen.thumb, alt: `Frame from ${chosen.name || 'the chosen climb'}` }),
+      h('figcaption', { class: 'muted small', text: `${chosen.name || 'Untitled climb'}, ${fmtDate(chosen.createdAt)}. Check it's the same climb.` })));
+  }
+  const more = $('compare-more');
+  more.hidden = sorted.length <= LIMIT;
+  more.textContent = compareShowAll ? 'Show fewer' : `Show all ${sorted.length} earlier climbs`;
+}
+$('compare-more').addEventListener('click', () => { compareShowAll = !compareShowAll; renderComparePicker(); });
+$('details-form').elements.name.addEventListener('input', () => renderComparePicker());
 
 $('set-start').addEventListener('click', () => {
   trim.start = player.video.currentTime;
@@ -136,14 +198,22 @@ $('set-end').addEventListener('click', () => {
 });
 $('reset-trim').addEventListener('click', () => { trim = { start: 0, end: null }; updateTrimLabels(); });
 $('pick-btn').addEventListener('click', () => {
-  $('pick-btn').textContent = 'Now tap the climber in the video ↑';
+  // A second tap while waiting cancels.
+  if (player.picking) {
+    player.cancelPick();
+    $('pick-btn').textContent = pick ? 'Select again' : 'Select the climber';
+    return;
+  }
+  $('pick-btn').textContent = 'Cancel';
   player.video.scrollIntoView({ behavior: 'smooth', block: 'center' });
   player.pickPoint((m) => {
     pick = m;
     $('pick-status').textContent = `Climber selected at ${fmtTime(m.t, true)}. The app will follow this person.`;
     $('pick-btn').textContent = 'Select again';
+    $('pick-clear').hidden = false;
   });
 });
+$('pick-clear').addEventListener('click', resetPick);
 $('change-video').addEventListener('click', () => $('file-input').click());
 $('cancel-btn').addEventListener('click', () => abort?.abort());
 
@@ -237,7 +307,12 @@ async function runAnalysis() {
     const analysis = analyze(out.frames, { frameHeightPx: out.height, terrain: details.terrain, venue: details.venue });
     if (!analysis.ok) throw new Error(analysis.reason);
     // Earlier climbs let the coaching follow up on recurring issues instead of repeating itself.
-    const report = coach(analysis, { history: await upgradeAll(await store.listSessions()), coach: coachInfo.id, venue: details.venue });
+    const earlier = await upgradeAll(await store.listSessions());
+    const report = coach(analysis, {
+      history: earlier, coach: coachInfo.id, venue: details.venue,
+      compareWith: earlier.find((x) => x.id === compareTo) || null,
+      outcome: details.outcome === 'auto' ? null : details.outcome,
+    });
     const track = packTrack(out.frames, out.aspect);
     const thumb = await grabThumbnail(video, (analysis.window.t0 + analysis.window.t1) / 2);
 
@@ -254,6 +329,7 @@ async function runAnalysis() {
       outcome: details.outcome === 'auto' ? auto : details.outcome,
       outcomeSource: details.outcome === 'auto' ? 'auto' : 'user',
       coach: coachInfo.id,
+      compareTo: earlier.some((x) => x.id === compareTo) ? compareTo : null,
       settings: { quality: settings.quality, fps: settings.fps },
       analysis,
       report,
@@ -289,7 +365,8 @@ async function showResult(session) {
     renderReport(box, session, {
       heightCm: settings.heightCm, history, track, aspect: session.track?.aspect,
       onSeek: (t, rate) => player.seek(t, rate),
-      onSetOutcome: async (val) => { session.outcome = val; session.outcomeSource = 'user'; await store.saveSession(session); draw(); toast('Saved.'); },
+      onSetOutcome: async (val) => { await setOutcome(session, val); draw(); toast('Saved.'); },
+      onOpen: (id) => openSession(id, true),
       footer: h('div', { class: 'actions' },
         h('label', { class: 'btn btn-primary btn-block', for: 'file-input', text: 'Analyse another video' }),
       ),
@@ -302,6 +379,24 @@ async function showResult(session) {
 
 // ---------- history ----------
 
+// The coaching for one climb, given everything saved: earlier climbs (for follow-ups) and the
+// earlier attempt it's compared with, if one was chosen.
+function coachSession(s, all) {
+  const earlier = all.filter((x) => x.id !== s.id && x.createdAt < s.createdAt && x.report);
+  return coach(s.analysis, {
+    history: earlier, coach: s.coach, venue: s.venue,
+    compareWith: s.compareTo ? all.find((x) => x.id === s.compareTo && x.analysis && x.report) || null : null,
+    outcome: s.outcomeSource === 'user' ? s.outcome : null,
+  });
+}
+// Correcting the result changes the comparison (and the fall advice), so re-coach and save.
+async function setOutcome(s, val) {
+  s.outcome = val;
+  s.outcomeSource = 'user';
+  s.report = coachSession(s, await store.listSessions());
+  await store.saveSession(s);
+}
+
 // Re-analyses climbs saved by an older version, from their stored poses (no video needed).
 // earlier: the climbs saved before this one, already upgraded.
 async function upgradeSession(s, earlier = []) {
@@ -313,7 +408,7 @@ async function upgradeSession(s, earlier = []) {
     }
     // Climbs from before the coaches get the coach matching the quality they were analysed at.
     if (!s.coach) s.coach = coachForQuality(s.settings?.quality).id;
-    s.report = coach(s.analysis, { history: earlier, coach: s.coach, venue: s.venue });
+    s.report = coachSession(s, earlier);
     // Climbs saved before auto-detection had their result chosen by hand.
     if (!s.outcomeSource) s.outcomeSource = 'user';
     s.analysisVersion = ANALYSIS_VERSION;
@@ -386,7 +481,8 @@ async function openSession(id, fromProgress = false) {
       history, track, aspect: s.track?.aspect,
       heightCm: settings.heightCm,
       onSeek: canSeek ? (t, rate) => detailPlayer.seek(t, rate) : null,
-      onSetOutcome: async (val) => { s.outcome = val; s.outcomeSource = 'user'; await store.saveSession(s); render(); toast('Saved.'); },
+      onSetOutcome: async (val) => { await setOutcome(s, val); render(); toast('Saved.'); },
+      onOpen: (id) => openSession(id),
       extra,
     });
   };

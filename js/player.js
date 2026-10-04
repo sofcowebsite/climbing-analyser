@@ -176,11 +176,27 @@ export function createPlayer(container) {
   const hintEl = document.createElement('div');
   hintEl.className = 'pick-hint';
   hintEl.textContent = 'Tap on the climber';
+  // While picking, the phone's own video controls are hidden (on iPhone they sit on top of the
+  // picture and swallow the tap), so a slider takes over moving through the video.
+  const scrub = document.createElement('input');
+  scrub.type = 'range';
+  scrub.className = 'pick-scrub';
+  scrub.min = '0';
+  scrub.step = '0.01';
+  scrub.setAttribute('aria-label', 'Move through the video');
+  scrub.addEventListener('input', () => { video.currentTime = Number(scrub.value); });
+  const scrubRow = document.createElement('div');
+  scrubRow.className = 'pick-scrub-row';
+  scrubRow.append(document.createTextNode('Move to a moment where the climber is easy to see:'), scrub);
+  let hadControls = true;
   function stopPicking() {
+    if (!picking) return;
     picking = null;
     hintEl.remove();
+    scrubRow.remove();
     canvas.style.pointerEvents = 'none';
     wrap.classList.remove('picking');
+    video.controls = hadControls;
   }
 
   // Redraw on every presented video frame when the browser supports it (exactly in sync),
@@ -224,12 +240,18 @@ export function createPlayer(container) {
     setLive(pts, box = null) { live = pts; liveBox = box; draw(); },
     pickPoint(cb) {
       video.pause();
+      if (!picking) hadControls = video.controls;
       picking = cb;
+      video.controls = false;
       canvas.style.pointerEvents = 'auto';
       wrap.classList.add('picking');
       wrap.appendChild(hintEl);
+      scrub.max = String(video.duration || 0);
+      scrub.value = String(video.currentTime);
+      wrap.after(scrubRow);
       draw();
     },
+    get picking() { return !!picking; },
     cancelPick() { stopPicking(); },
     setMarker(m) { marker = m; draw(); },
     showControls(on) { video.controls = on; controls.hidden = !on; },
