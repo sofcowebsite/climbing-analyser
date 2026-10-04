@@ -29,6 +29,7 @@ export const OUT_CFG = {
   freeFallAccel: 6,      // T/s²: free fall is ~19 T/s²; lowering/down-climbing is far gentler
   holdToCount: 1.0,      // s: a hold must be held at least this long to count as "held"
   stableBeforeDismount: 1.2,
+  settledFinish: 4,      // s at the high point, with nothing slipping, before letting go
 };
 
 /**
@@ -170,17 +171,55 @@ export function classifyOutcome(c) {
   const top = topOutSignals(c);
   const maxH = H.com[maxIdx];
 
+  // How long the climber had been settled at the top before frame s: the body at its high
+  // point (maybe shifting feet, but not dropping away) and the higher hand on its hold.
+  const settledAtTop = (s) => {
+    let i = s - 1, gap = 0;
+    while (i >= 0) {
+      const h = H.com[i];
+      if (!isNum(h)) { if (++gap > Math.round(0.5 / c.dt)) break; i--; continue; }
+      gap = 0;
+      if (h < maxH - 0.6) break;
+      i--;
+    }
+    const atTopFor = times[s] - times[Math.min(s, i + 1)];
+    // ...and how long the higher hand (the one on the top hold) had been there. A hand that
+    // has only just arrived, or just reached above it, is an attempt, not a finish being held.
+    const reach = recentReach(c, s);
+    const stillFor = (side) => {
+      const ends = c.handMoves.filter((m) => m.side === side && m.t1 <= times[s] + 0.05).map((m) => m.t1);
+      if (reach?.side === side) ends.push(reach.t1);
+      return ends.length ? times[s] - Math.max(...ends) : times[s] - times[0];
+    };
+    // Highest point each hand reached in the last second (a reach that misses has often
+    // started dropping back by the time the body does).
+    const from = Math.max(0, s - Math.round(1 / c.dt));
+    const top = (k) => Math.max(-Infinity, ...H[k].slice(from, s + 1).filter(isNum));
+    const hl = top('lWrist'), hr = top('rWrist');
+    // Level hands are a match: the one that has been on the hold longer counts.
+    const handFor = Math.abs(hl - hr) <= 0.3 ? Math.max(stillFor('left'), stillFor('right'))
+      : stillFor(hl > hr ? 'left' : 'right');
+    return Math.min(atTopFor, handFor);
+  };
   // Label each fast drop: a fall, or getting down on purpose after finishing.
   const labelled = drops.filter((d) => d.kind === 'fast').map((d) => {
     const h = heldAtTop(c, d.s);
     const atTop = isNum(H.com[d.s]) && H.com[d.s] >= maxH - 0.5;
     const afterTopOut = top.mantle && top.mantle.t < d.t;
-    // Only call it "getting down on purpose" with real finishing evidence: a top-out, or
-    // both hands matched on the highest hold and held. A long hang and then a drop is not
-    // proof of finishing: that is also exactly what running out of strength looks like.
-    const deliberate = afterTopOut || (atTop && h.matched && h.held >= OUT_CFG.stableBeforeDismount);
-    const out = { ...d, held: h.held, matched: h.matched, lastMove: h.lastMove, atTop, type: deliberate ? 'dismount' : 'fall' };
-    if (!deliberate) out.autopsy = fallAutopsy(c, out);
+    const out = { ...d, held: h.held, matched: h.matched, lastMove: h.lastMove, atTop, settled: atTop ? settledAtTop(d.s) : 0 };
+    const autopsy = fallAutopsy(c, out);
+    // Something slipping, swinging or cutting loose first means it wasn't let go on purpose.
+    const slipped = autopsy.causes.some((x) => ['footSlip', 'handSlip', 'barnDoor', 'feetCut'].includes(x.key) && x.confidence !== 'low');
+    // "Getting down on purpose" needs real finishing evidence: a top-out; both hands matched
+    // on the highest hold and held; or a long, settled stay at the high point (finishing and
+    // looking around before dropping off). In the last two, nothing may slip or swing first,
+    // because a hang and then a drop is also exactly what running out of strength looks like.
+    const matchedFinish = atTop && h.matched && h.held >= OUT_CFG.stableBeforeDismount && !slipped;
+    const settledFinish = atTop && out.settled >= OUT_CFG.settledFinish && !slipped;
+    const deliberate = afterTopOut || matchedFinish || settledFinish;
+    out.type = deliberate ? 'dismount' : 'fall';
+    out.how = afterTopOut ? 'topout' : matchedFinish ? 'matched' : settledFinish ? 'settled' : null;
+    if (!deliberate) out.autopsy = autopsy;
     return out;
   });
   const falls = labelled.filter((d) => d.type === 'fall');
@@ -226,6 +265,11 @@ export function classifyOutcome(c) {
     const what = { footSlip: 'a foot slipped', handSlip: 'a hand slid off', barnDoor: 'your body swung out', feetCut: 'your feet cut loose' };
     if (letGo.length) ev.push(`Something let go first: ${letGo.map((x) => what[x.key]).join(', ')}.`);
     if (!quick && finalFall.atTop && finalFall.held >= 0.8 && !letGo.length) alt.push('We did not see your hands matched or a top-out. If that was the finish hold and you let go on purpose, mark this climb as sent.');
+  } else if (dismount?.how === 'settled') {
+    result = 'finished'; confidence = dismount.settled >= 6 ? 'medium' : 'low';
+    headline = 'Held the top, then let go';
+    ev.push(`You stayed at your high point for ${f1(dismount.settled)} s with nothing slipping or swinging, then let go and dropped down at ${f1(dismount.t)} s.`);
+    alt.push('We can\'t see the holds, so we can\'t tell whether that was the finish hold. If you were stuck there and came off, mark this climb as a fall.');
   } else if (held.held >= 1.5 && (held.matched || dismount || controlled)) {
     result = 'finished'; confidence = held.matched && held.held >= 2 ? 'medium' : 'low';
     headline = held.matched ? 'Matched the top hold and held it' : 'Held the highest hold';
@@ -290,7 +334,12 @@ export function fallAutopsy(c, fall) {
   const feetFirst = ['lFoot', 'rFoot'].map((k) => ({ k, d: firstDrop(k) })).filter((x) => x.d && x.d.lead >= 0.05).sort((a, b) => b.d.lead - a.d.lead);
   const handsFirst = ['lHand', 'rHand'].map((k) => ({ k, d: firstDrop(k) })).filter((x) => x.d && x.d.lead >= 0.05).sort((a, b) => b.d.lead - a.d.lead);
 
-  if (feetFirst.length && (!handsFirst.length || feetFirst[0].d.t <= handsFirst[0].d.t)) {
+  // Both feet leaving together, with the body hanging straight (no swing), is taking the feet
+  // off to drop down, not a slip. One foot first, or a swing, is a slip.
+  let swing = 0;
+  if (feetFirst.length) for (let i = feetFirst[0].d.i; i <= s; i++) if (isNum(vX[i])) swing = Math.max(swing, Math.abs(vX[i]));
+  const feetReleased = feetFirst.length === 2 && Math.abs(feetFirst[0].d.t - feetFirst[1].d.t) <= 0.15 && swing < 0.8;
+  if (feetFirst.length && !feetReleased && (!handsFirst.length || feetFirst[0].d.t <= handsFirst[0].d.t)) {
     const f = feetFirst[0];
     const side = f.k === 'lFoot' ? 'left' : 'right';
     const placed = footMoves.filter((m) => m.side === side && m.t1 <= f.d.t && m.t1 >= f.d.t - 1.5).sort((a, b) => b.t1 - a.t1)[0];

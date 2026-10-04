@@ -418,7 +418,10 @@ function coachTake(rep, coachId) {
   const lines = [];
   const oc = rep.outcome;
   const lastFall = rep.fallAnalyses[rep.fallAnalyses.length - 1];
-  if (oc?.result === 'topped' || oc?.result === 'finished') {
+  if ((oc?.result === 'topped' || oc?.result === 'finished') && oc.confidence === 'low') {
+    // Not sure it was the finish (the camera can't see the holds): say so, and how to fix it.
+    lines.push(`It looks like you finished: ${lower1(oc.headline)}. If that wasn't the finish hold, set the result to "Fell" below.`);
+  } else if (oc?.result === 'topped' || oc?.result === 'finished') {
     lines.push(pick(simple ? ['Nice one: you made it to the top!', 'You got to the top. Great effort!'] : expert ? [`You completed the climb (${oc.result === 'topped' ? 'topped out' : 'held the finish'}).`] : ['You got to the top.', 'You finished the climb.'], rep.overall || 0));
   } else if (oc?.result === 'fell' && lastFall) {
     const why = FALL_PLAIN[lastFall.primary?.key];

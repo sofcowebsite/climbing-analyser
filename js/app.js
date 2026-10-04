@@ -304,7 +304,7 @@ async function runAnalysis() {
 
     setProgress('Working out your technique…', 1, '');
     window.__crux.lastRun = out; // for debugging and automated tests
-    const analysis = analyze(out.frames, { frameHeightPx: out.height, terrain: details.terrain, venue: details.venue });
+    const analysis = analyze(out.frames, { frameHeightPx: out.height, terrain: details.terrain, venue: details.venue, aspect: out.aspect });
     if (!analysis.ok) throw new Error(analysis.reason);
     // Earlier climbs let the coaching follow up on recurring issues instead of repeating itself.
     const earlier = await upgradeAll(await store.listSessions());
@@ -403,7 +403,7 @@ async function upgradeSession(s, earlier = []) {
   if ((s.analysisVersion || 1) >= ANALYSIS_VERSION) return s;
   try {
     if (s.track) {
-      const analysis = analyze(framesFromTrack(s.track), { frameHeightPx: s.videoHeight || null, terrain: s.terrain, venue: s.venue });
+      const analysis = analyze(framesFromTrack(s.track), { frameHeightPx: s.videoHeight || null, terrain: s.terrain, venue: s.venue, aspect: s.track.aspect });
       if (analysis.ok) s.analysis = analysis;
     }
     // Climbs from before the coaches get the coach matching the quality they were analysed at.

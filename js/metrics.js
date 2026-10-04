@@ -18,7 +18,7 @@ export const LM = {
 };
 
 // Bumped when the analysis changes; older saved sessions are re-analysed from their stored poses.
-export const ANALYSIS_VERSION = 9;
+export const ANALYSIS_VERSION = 10;
 
 // Landmarks kept when a session is stored (enough to redraw the skeleton).
 export const KEPT_LANDMARKS = [0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -225,12 +225,66 @@ function countReadjust(moves, adjustments, windowSec = 2.5) {
   return n;
 }
 
+// ---------- when does the climb start? ----------
+
+// The climb starts after the last moment the person stands upright on the floor (lower
+// foot at floor level, hips well above the ankles, knees straight) before both feet stay
+// up off the floor. Returns { start, offFloor }: start is a frame index, or null when
+// there's no standing phase (the video starts with the climber already on the wall) or no
+// clear lift-off; offFloor(i) says whether both feet were up at frame i (null if unseen).
+function climbStartFromFeet({ tracks, T, n, dt, knee, hipMid, firstValid }) {
+  const footY = [], seen = [];
+  for (let i = 0; i < n; i++) {
+    const l = tracks[LM.lAnkle], r = tracks[LM.rAnkle];
+    const ly = l.conf[i] >= 0.4 ? l.y[i] : NaN, ry = r.conf[i] >= 0.4 ? r.y[i] : NaN;
+    // The lower foot (larger y is lower in the picture).
+    footY.push(isNum(ly) && isNum(ry) ? Math.max(ly, ry) : NaN);
+    seen.push(isNum(ly) && isNum(ry));
+  }
+  const ys = footY.filter(isNum);
+  if (ys.length < Math.round(3 / dt)) return { start: null, offFloor: () => null };
+  const floor = quantile(ys, 0.9);
+  const standing = (i) => isNum(footY[i]) && footY[i] >= floor - 0.35 * T
+    && isNum(hipMid[i][1]) && footY[i] - hipMid[i][1] >= 1.5 * T
+    && isNum(knee.l[i]) && isNum(knee.r[i]) && (knee.l[i] + knee.r[i]) / 2 >= 150;
+  const offFloor = (i) => isNum(footY[i]) && footY[i] < floor - 0.4 * T;
+  const offFloorOrNull = (i) => (isNum(footY[i]) ? offFloor(i) : null);
+  // First sustained lift-off: both feet up for 1.5 s (most frames where the feet are seen).
+  const need = Math.round(1.5 / dt);
+  let lift = -1;
+  for (let i = firstValid; i < n - need && lift < 0; i++) {
+    if (!offFloor(i)) continue;
+    let up = 0, tot = 0;
+    for (let j = i; j < i + need; j++) if (seen[j]) { tot++; if (offFloor(j)) up++; }
+    if (tot >= need * 0.4 && up >= tot * 0.85) lift = i;
+  }
+  if (lift < 0) return { start: null, offFloor: offFloorOrNull };
+  // The last time they were standing on the floor before that (at most 15 s earlier).
+  let stood = -1, standCount = 0;
+  for (let i = lift; i >= Math.max(firstValid, lift - Math.round(15 / dt)); i--) {
+    if (standing(i)) { if (stood < 0) stood = i; standCount++; }
+  }
+  if (stood < 0 || standCount * dt < 0.8) return { start: null, offFloor: offFloorOrNull };
+  return { start: Math.min(n - 1, stood + 1), offFloor: offFloorOrNull };
+}
+
 // ---------- main entry ----------
 
 export function analyze(allFrames, opts = {}) {
   const warnings = [];
+  // A point the model places outside the picture is a guess (the climber is half out of
+  // shot), so it counts as unseen. Coordinates are in frame heights: x in 0..aspect, y in 0..1.
+  const A = opts.aspect;
+  const inFrame = isNum(A) && A > 0
+    ? (allFrames || []).map((f) => (f.p ? { ...f, p: f.p.map((q) => (q && (q[0] < -0.01 || q[0] > A + 0.01 || q[1] < -0.01 || q[1] > 1.01) ? [q[0], q[1], Math.min(q[2], 0.1)] : q)) } : f))
+    : allFrames || [];
   // Ignore walking to the wall after pressing record, and back to the phone to stop it.
-  const { frames, trimStart, trimEnd } = trimCameraApproach(allFrames || []);
+  // (Decided on the original detections: right by the lens most of the body is out of the
+  // picture, which is exactly what shows the approach.)
+  const cut = trimCameraApproach(allFrames || []);
+  const first = cut.frames.length ? (allFrames || []).indexOf(cut.frames[0]) : 0;
+  const frames = inFrame.slice(first, first + cut.frames.length);
+  const { trimStart, trimEnd } = cut;
   const n = frames.length;
   if (n < 10) return { ok: false, reason: 'Video too short to analyse.' };
 
@@ -295,7 +349,12 @@ export function analyze(allFrames, opts = {}) {
 
   const comX = com.map((c) => c[0]), comY = com.map((c) => c[1]);
   const firstValid = comY.findIndex(isNum);
-  const baseY = comY[firstValid];
+  const { start: footStart, offFloor } = climbStartFromFeet({ tracks, T, n, dt, knee, hipMid, firstValid });
+  // Heights are measured from where the climb starts (not from whoever was seen first,
+  // which can be someone walking past or a half-visible body at the edge of the picture).
+  const baseIdx = footStart ?? firstValid;
+  const startY = median(comY.slice(baseIdx, baseIdx + Math.max(1, Math.round(0.5 / dt))).filter(isNum));
+  const baseY = isNum(startY) ? startY : comY[firstValid];
   // Height gained, in torso lengths (up is positive).
   const height = comY.map((y) => (isNum(y) ? (baseY - y) / T : NaN));
   const vX = derivative(comX, dt).map((v) => v / T);
@@ -307,13 +366,31 @@ export function analyze(allFrames, opts = {}) {
   let wStart = firstValid, wEnd = n - 1;
   const maxH = Math.max(...height.filter(isNum));
   const maxIdx = height.indexOf(maxH);
-  const liftIdx = height.findIndex((h) => isNum(h) && h > 0.3);
-  if (liftIdx > 0) wStart = Math.max(firstValid, liftIdx - Math.round(1 / dt));
+  if (footStart !== null) wStart = footStart;
+  else {
+    const liftIdx = height.findIndex((h) => isNum(h) && h > 0.3);
+    if (liftIdx > 0) wStart = Math.max(firstValid, liftIdx - Math.round(1 / dt));
+  }
 
   // Significant descents: falls, jumping off, lowering, down-climbing.
-  const drops = detectDrops({ height, vY, times, dt });
+  // Only once the climb has started, and only from the wall: sitting down for a sit start or
+  // crouching with your feet still on the floor isn't a fall.
+  const feetWereUp = (s) => {
+    let up = 0, seen = 0;
+    for (let i = Math.max(0, s - Math.round(1 / dt)); i <= s; i++) { const v = offFloor(i); if (v !== null) { seen++; if (v) up++; } }
+    return seen < 3 || up >= seen * 0.5;
+  };
+  // And only once they've actually climbed: a drop before the body has risen clearly above
+  // where it started (e.g. crouching into a sit start when the feet can't be seen) isn't one.
+  // (Held for a second, so a blip while the climber is half out of shot doesn't count.)
+  const climbedBy = (s) => {
+    let up = 0;
+    for (let i = wStart; i < s; i++) if (isNum(height[i]) && height[i] >= (height[wStart] || 0) + 0.8) up++;
+    return up * dt >= 1;
+  };
+  const drops = detectDrops({ height, vY, times, dt }).filter((d) => d.s >= wStart && feetWereUp(d.s) && climbedBy(d.s));
   const lostDrop = lostWhileDropping({ height, vY, times, dt, coreOk });
-  if (lostDrop && !drops.some((d) => Math.abs(d.t - lostDrop.t) < 1)) drops.push(lostDrop);
+  if (lostDrop && lostDrop.s >= wStart && !drops.some((d) => Math.abs(d.t - lostDrop.t) < 1)) drops.push(lostDrop);
   const falls = drops.filter((d) => d.kind === 'fast');
   // End the window at the high point if the climber comes down afterwards (lower-off / fall / jump down),
   // but always include the start of a fall so we can see what caused it.

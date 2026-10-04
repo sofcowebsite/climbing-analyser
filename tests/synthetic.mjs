@@ -146,6 +146,31 @@ export function withEnding(frames, kind, { fps = 10 } = {}) {
       hold(1.5);
       break;
     }
+    case 'settledDrop': {
+      // Finished: stays on the top holds ~5 s (shifting a foot once), then takes both feet
+      // off together, hangs straight for a moment and drops. Nothing slips or swings.
+      hold(2.5);
+      move(LF, 0.03 * T, -0.15 * T, 0.4);
+      hold(2.5);
+      move([...LF, ...RF, 25, 26], 0, 0.5 * T, 0.2); // feet off, legs hang straight down
+      hold(0.2);
+      fallAll(1.0);
+      hold(1.5);
+      break;
+    }
+    case 'matchSwing': {
+      // Matches two holds mid-wall and holds ~2.5 s, then the feet cut loose and swing
+      // sideways before dropping: a fall, even though the hands were matched.
+      hold(1);
+      move([15], p[16][0] - p[15][0] - 0.1 * T, p[16][1] - p[15][1], 0.6);
+      hold(2.5);
+      const legs = [23, 24, 25, 26, ...LF, ...RF];
+      move(legs, 0.8 * T, 0.4 * T, 0.3); // feet cut, legs swing out
+      move(legs, -0.5 * T, 0.2 * T, 0.3);
+      fallAll(1.0);
+      hold(1.5);
+      break;
+    }
     case 'matchJump':
       hold(1);
       move([15], p[16][0] - p[15][0] - 0.1 * T, p[16][1] - p[15][1], 0.6); // match

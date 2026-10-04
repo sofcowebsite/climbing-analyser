@@ -393,3 +393,91 @@ test('a normal video is not trimmed', () => {
   assert.equal(r.metrics.trimmedStart, 0);
   assert.equal(r.metrics.trimmedEnd, 0);
 });
+
+// ---------- lessons from real indoor reference videos ----------
+
+test('settling on the top hold for several seconds, then letting go cleanly, is a (probable) finish', () => {
+  const r = ending('settledDrop');
+  assert.equal(r.outcome.result, 'finished');
+  assert.equal(r.outcome.headline, 'Held the top, then let go');
+  assert.notEqual(r.outcome.confidence, 'high', 'the holds are not visible, so never sure');
+  assert.equal(r.falls.length, 0);
+  // Running out of strength after a long hang (hands peel off first) stays a fall.
+  assert.equal(ending('pumpFall').outcome.result, 'fell');
+});
+
+test('matching two holds and then swinging off is a fall, not a finish', () => {
+  const r = ending('matchSwing');
+  assert.equal(r.outcome.result, 'fell');
+  assert.equal(r.falls.length, 1);
+});
+
+test('the person filming zooming in near the end of the climb is not cut off', () => {
+  const climb = withEnding(makeClimb({ cycles: 8 }), 'settledDrop');
+  const n = climb.length, from = Math.floor(n * 0.7);
+  // From 70% of the way through, the climber grows 1.6x over 3 s (zoom/stepping closer) and stays that size.
+  const zoomed = climb.map((f, i) => {
+    if (i < from || !f.p) return f;
+    const k = 1 + 0.6 * Math.min(1, (f.t - climb[from].t) / 3);
+    const hx = (f.p[23][0] + f.p[24][0]) / 2, hy = (f.p[23][1] + f.p[24][1]) / 2;
+    return { ...f, p: f.p.map(([x, y, v]) => [hx + (x - hx) * k, hy + (y - hy) * k, v]) };
+  });
+  const r = analyze(zoomed);
+  assert.equal(r.metrics.trimmedEnd, 0, `trimmed ${r.metrics.trimmedEnd} s`);
+  assert.equal(r.outcome.result, 'finished');
+});
+
+test('walking up to the phone with junk detections right by the lens is cut off and not a fall', () => {
+  const climb = withEnding(makeClimb({ cycles: 6 }), 'lower');
+  const base = analyze(climb);
+  const last = climb[climb.length - 1];
+  const tail = [];
+  for (let i = 1; i <= 30; i++) tail.push({ t: last.t + i / 10, p: approach(last.p, 1 + 2.5 * (i / 30), i / 30) });
+  // Then 1.5 s of nonsense: tiny, scattered "bodies" while the phone is picked up.
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 1; i <= 15; i++) {
+    const cx = 0.1 + rnd() * 0.4, cy = 0.2 + rnd() * 0.6;
+    tail.push({ t: last.t + 3 + i / 10, p: last.p.map(([x, y], j) => [cx + (x - last.p[23][0]) * 0.3, cy + (y - last.p[23][1]) * 0.3, 0.9]) });
+  }
+  const r = analyze([...climb, ...tail]);
+  assert.ok(r.metrics.trimmedEnd >= 2.5, `trimmed ${r.metrics.trimmedEnd} s`);
+  assert.equal(r.outcome.result, base.outcome.result);
+  assert.equal(r.falls.length, 0);
+});
+
+test('standing at the wall and crouching into a sit start is not a fall, and the climb starts after it', () => {
+  const climb = makeClimb({ cycles: 6 });
+  const p0 = climb[0].p, T = 0.12;
+  const hx = (p0[23][0] + p0[24][0]) / 2;
+  const floor = Math.max(p0[27][1], p0[28][1]) + 1.2 * T;
+  // A standing pose on the floor: upper body as at the start, straight legs, feet on the floor.
+  const pose = (hipY, kneeBend) => {
+    const dy = hipY - (p0[23][1] + p0[24][1]) / 2;
+    const p = p0.map(([x, y, v]) => [x, y + dy, v]);
+    for (const [hip, knee, ankle, heel, toe, side] of [[23, 25, 27, 29, 31, -1], [24, 26, 28, 30, 32, 1]]) {
+      const ax = hx + side * 0.15 * T;
+      p[ankle] = [ax, floor, 0.95]; p[heel] = [ax - 0.05 * T, floor + 0.05 * T, 0.9]; p[toe] = [ax + 0.1 * T, floor + 0.05 * T, 0.9];
+      p[knee] = [ax + side * kneeBend * T, (p[hip][1] + floor) / 2, 0.95];
+    }
+    return p;
+  };
+  const pre = [];
+  for (let i = 0; i < 40; i++) pre.push({ t: i / 10, p: pose(floor - 2.0 * T, 0) }); // 4 s standing
+  for (let i = 1; i <= 8; i++) pre.push({ t: 4 + i / 10, p: pose(floor - 2.0 * T + 1.1 * T * (i / 8), 0.6 * (i / 8)) }); // crouch
+  const shifted = climb.map((f) => ({ ...f, t: f.t + 5 }));
+  const r = analyze([...pre, ...shifted]);
+  assert.equal(r.falls.length, 0, `falls at ${r.falls.map((f) => f.t)}`);
+  assert.ok(r.window.t0 >= 3.5, `climb starts at ${r.window.t0}`);
+  assert.notEqual(r.outcome.result, 'fell');
+});
+
+test('points the model places outside the picture count as unseen', () => {
+  const climb = makeClimb({ cycles: 6, noise: 0.002 });
+  // Push the left arm off the left edge of a portrait frame (aspect 0.5625) for the first half.
+  const half = Math.floor(climb.length / 2);
+  const off = climb.map((f, i) => (i < half && f.p ? { ...f, p: f.p.map((q, j) => ([11, 13, 15, 17, 19, 21].includes(j) ? [-0.2, q[1], q[2]] : q)) } : f));
+  assert.doesNotThrow(() => analyze(off, { aspect: 0.5625 }));
+  const r = analyze(off, { aspect: 0.5625 });
+  assert.ok(r.ok);
+  assert.ok(r.metrics.handMoves <= analyze(climb).metrics.handMoves + 1, 'no invented moves from off-screen points');
+});

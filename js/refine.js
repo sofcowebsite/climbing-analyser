@@ -112,33 +112,77 @@ export function fixLeftRight(frames) {
  * Cuts off walking to or from the phone. People start recording and walk to the wall, then
  * walk back to stop it, so at the very start and end they look much bigger on screen than
  * while climbing. Those stretches aren't climbing and would distort the measurements.
+ *
+ * Walking toward the camera looks like steady, fast growth on screen (well over 10% per
+ * second) that carries on until the person fills the frame or disappears. Someone filming
+ * who zooms in or steps closer makes the climber grow once and then level off while they
+ * keep climbing, so a stretch is only cut when the growth keeps going right to the end.
+ * Frames where nobody is found at the very start or end are cut as well.
  * Returns { frames, trimStart, trimEnd } (seconds removed at each end).
  */
-export function trimCameraApproach(frames, { factor = 1.25, maxShare = 0.4 } = {}) {
+export function trimCameraApproach(frames, { factor = 1.3, rate = 1.08, maxShare = 0.4 } = {}) {
   const n = frames.length;
+  const none = { frames, trimStart: 0, trimEnd: 0 };
+  if (n < 10) return none;
   const size = frames.map((f) => {
     const p = f.p;
     if (!p || Math.min(p[11][2], p[12][2], p[23][2], p[24][2]) < 0.5) return NaN;
     return dist(mid(p[11], p[12]), mid(p[23], p[24]));
   });
   const good = size.map((v, i) => [v, i]).filter(([v]) => isNum(v));
-  if (good.length < 10) return { frames, trimStart: 0, trimEnd: 0 };
+  if (good.length < 10) return none;
+  const dt = Math.max(1e-3, (frames[n - 1].t - frames[0].t) / (n - 1));
+  const k = Math.max(1, Math.round(0.5 / dt)); // compare sizes half a second apart
   // Typical climbing size: the middle half of the video.
   const midVals = good.filter(([, i]) => i >= n * 0.25 && i <= n * 0.75).map(([v]) => v);
   const ref = median(midVals.length >= 5 ? midVals : good.map(([v]) => v));
-  // Smooth a little so a single bad frame doesn't decide anything.
+  // Smooth a little so a single bad frame doesn't decide anything (sm1: over about a second).
   const sm = smoothArr(size, 5);
-  const big = (i) => isNum(sm[i]) && sm[i] > ref * factor;
+  const sm1 = smoothArr(size, 2 * k + 1);
   const limit = Math.floor(n * maxShare);
-  // From the end: frames that are "big" (or lost, e.g. filled the frame / went past the
-  // camera) back to where the climber was last normal size.
-  let b = n - 1, sawBig = false;
-  while (b > 0 && n - 1 - b < limit && (big(b) || (!isNum(sm[b]) && sawBig) || (!isNum(sm[b]) && b > n - 1 - 3))) { if (big(b)) sawBig = true; b--; }
-  let end = sawBig ? b : n - 1;
-  let a = 0; sawBig = false;
-  while (a < n - 1 && a < limit && (big(a) || (!isNum(sm[a]) && sawBig))) { if (big(a)) sawBig = true; a++; }
-  const start = sawBig ? a : 0;
-  if (end - start < 10) return { frames, trimStart: 0, trimEnd: 0 };
+  const firstSeen = good[0][1], lastSeen = good[good.length - 1][1];
+
+  // One side at a time. dir = +1 looks at the end (walking up to the phone to stop it),
+  // -1 at the start (walking from the phone to the wall). Returns the first/last frame to keep.
+  const approach = (dir) => {
+    const edge = dir > 0 ? n - 1 : 0;
+    const zone = [];
+    for (let i = edge; Math.abs(i - edge) < limit && i >= 0 && i < n; i -= dir) zone.push(i);
+    // The biggest the person gets near this end of the video (on the second-long average, so
+    // one nonsense detection right by the lens can't be the peak).
+    const pk = zone.filter((i) => isNum(sm1[i])).reduce((a, i) => (a === null || sm1[i] > sm1[a] ? i : a), null);
+    if (pk === null || sm1[pk] < ref * factor) return dir > 0 ? lastSeen : firstSeen;
+    // Right by the lens the detector loses the person or returns nonsense, so up to 3 s
+    // after the peak is fine; more than that means they carried on (e.g. a zoom mid-climb).
+    if (Math.abs(edge - pk) * dt > 3) return dir > 0 ? lastSeen : firstSeen;
+    // Walk back from the peak while the person was smaller than everything after (still
+    // approaching), on a second-long average so a brief dip in the detection doesn't stop it.
+    // Start inside the ramp (where the size is down to two-thirds of the peak): right at the
+    // peak the size levels off, which would look like the start of the approach.
+    let i = pk;
+    while (Math.abs(i - edge) < limit && i - dir >= 0 && i - dir < n && !(isNum(sm1[i]) && sm1[i] <= sm1[pk] / 1.5)) i -= dir;
+    if (!(isNum(sm1[i]) && sm1[i] <= sm1[pk] / 1.5)) return dir > 0 ? lastSeen : firstSeen;
+    let runMin = sm1[i];
+    while (Math.abs(i - edge) < limit) {
+      const next = i - dir;
+      if (next < 0 || next >= n) break;
+      if (!isNum(sm1[next])) { i = next; continue; }
+      if (sm1[next] > runMin * 1.06) break;
+      // Stop where the growth starts: before that the size was level (climbing).
+      const ahead = Math.max(Math.min(next + dir * k, n - 1), 0);
+      if (isNum(sm1[ahead]) && sm1[ahead] < sm1[next] * 1.04) break;
+      runMin = Math.min(runMin, sm1[next]);
+      i = next;
+    }
+    while (!isNum(sm1[i]) && i !== pk) i += dir;
+    // A real approach makes the person at least 1.5x bigger, quickly (on average 15%+ per
+    // second); a zoom, a lean or stepping closer to film doesn't.
+    const secs = Math.abs(pk - i) * dt;
+    if (!isNum(sm1[i]) || sm1[pk] < sm1[i] * 1.5 || secs < 0.3 || Math.log(sm1[pk] / sm1[i]) / secs < Math.log(rate) * 2) return dir > 0 ? lastSeen : firstSeen;
+    return i;
+  };
+  const start = Math.max(firstSeen, approach(-1)), end = Math.min(lastSeen, approach(1));
+  if (end - start < 10) return none;
   return {
     frames: frames.slice(start, end + 1),
     trimStart: start ? frames[start].t - frames[0].t : 0,
