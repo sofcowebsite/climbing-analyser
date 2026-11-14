@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Report preview</title>
+  <link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+  <!-- Development page: renders a full report from a simulated climb, so the report can be
+       looked at without a real video. Open via `npm start`, then
+       http://localhost:8080/tests/report-preview.html?feet=0&bent=1&ending=footSlip&coach=rowan&theme=dark
+       feet=0: reaches without moving feet first; bent=1: bent arms; ending: see synthetic.mjs;
+       coach: pip | rowan | sage; theme: light | dark; history=1 adds an earlier climb. -->
+  <main id="main" style="padding-bottom:40px"><div id="out" class="view"></div></main>
+  <script type="module">
+    import { analyze } from '../js/metrics.js';
+    import { coach } from '../js/coach.js';
+    import { packTrack, displayTrack } from '../js/player.js';
+    import { renderReport } from '../js/report.js';
+    import { makeClimb, withEnding } from './synthetic.mjs';
+
+    const q = new URLSearchParams(location.search);
+    if (q.get('theme')) document.documentElement.setAttribute('data-theme', q.get('theme'));
+    const style = { cycles: Number(q.get('cycles') || 8), noise: 0.004, seed: Number(q.get('seed') || 1), feetFirst: q.get('feet') !== '0', bentArms: q.get('bent') === '1' };
+    const ending = q.get('ending') || 'footSlip';
+    const aspect = 0.5625;
+    let frames = makeClimb(style);
+    // hips=0.1: shift the upper body sideways off the feet (to see the "hips over feet" replay).
+    const hipShift = Number(q.get('hips') || 0);
+    if (hipShift) for (const f of frames) for (const i of [0, 11, 12, 13, 14, 23, 24, 25, 26]) if (f.p) f.p[i] = [f.p[i][0] + hipShift, f.p[i][1], f.p[i][2]];
+    if (ending !== 'none') frames = withEnding(frames, ending);
+    const session = (id, fr, createdAt, history = []) => {
+      const analysis = analyze(fr, { terrain: 'vertical', venue: 'indoor', aspect });
+      const report = coach(analysis, { history, coach: q.get('coach') || 'rowan', venue: 'indoor' });
+      return { id, createdAt, name: 'Blue overhang', type: 'boulder', grade: 'V3', outcome: report.outcome?.result === 'fell' ? 'fell' : 'sent', outcomeSource: 'auto', venue: 'indoor', coach: report.coach, analysis, report, track: packTrack(fr, aspect) };
+    };
+    const history = q.get('history') === '1' ? [session('old', withEnding(makeClimb({ ...style, seed: 7 }), 'footSlip'), Date.now() - 864e5)] : [];
+    const s = session('now', frames, Date.now(), history);
+    window.__session = s;
+    renderReport(document.getElementById('out'), s, { history, track: displayTrack(s.track), aspect, onSetOutcome: () => {} });
+  </script>
+</body>
+</html>

@@ -18,24 +18,20 @@ Any free static host also works: Netlify, Cloudflare Pages, or Vercel. Just poin
 
 1. **Film:** filming from far away (e.g. outdoors from the base of the crag) is fine. Record in 4K, use the 2×/3× lens if the route still fits, keep the camera as still as you can, and don't zoom while recording.
 2. **Analyse tab:** choose the video, pick your coach and whether it was filmed outdoors or indoors, optionally pick an **earlier attempt at the same climb to compare with** (shown with thumbnails), add the name, grade and result, then tap **Analyse climb**. Pointing out the climber and trimming are optional, under "Optional": without a tap the app follows the person highest on the wall.
-3. **Report:** a detailed breakdown:
-   - **Your plan for next session:** the top 3 changes, each with what we saw (and on which moves), why it matters, what to do next time, a drill and a target number.
-   - **How it ended:** topped out, matched and held the top hold, lowered off, or fell. It's detected from the video, with the evidence and a confidence level shown, and you can correct it with one tap. Reaching a hold and coming off within about a second counts as a fall, not a finish.
-   - **Every fall broken down:** an animated skeleton replay of the last 3 seconds, zoomed in with the part that let go highlighted (works without the video). Then the most likely cause (missed catch, late dead-point, over-reach, feet cutting, hand slip, foot slip, barn door, lock-off, stalling, pump), how sure the app is, why it makes you fall, specific fixes, a drill, and a plan for your next attempt.
-   - **How you moved:** time spent still, adjusting your body, exploring holds, changing holds and pulling/pushing up (the movement states from the PLOS ONE 2017 route-previewing study), plus stops, probes (touching a hold and letting go) and the IFSC-style check that your body rises as the hand goes to the next hold. It's reported as behaviour, not as a skill rating.
-   - **Technique repertoire:** high steps, flags (inside/outside), drop knees, frog, hand/foot matches, foot swaps, cross-throughs, catches, mantles, traverses, stems and laybacks, each with a confidence level, plus suggestions for the terrain you picked (slab, vertical, overhang, roof, arête, corner, crack).
-   - **Movement timeline:** every half second gets multiple labels (role, static/dynamic, visible contacts, each hand and foot, orientation, hip movement, arm and leg posture, balance, flag, movement family, hold direction, events, outcome, visibility). Anything a single camera can't show (grip type, hips-to-wall distance, whether a foot is weighted, crack jam type) is labelled *unknown* rather than guessed. Tap a moment to see its labels, and **export them as JSON**. Reviewed exports are the raw material for training a real model later.
-   - **Move by move:** every hand move with ✓/✗ checks (feet first? straight arm? legs or arms? hips over feet? controlled arrival? hesitation? re-grip?). Tap to watch it.
-   - **Start / middle / top:** how your technique changed as you got higher and more tired.
-   - **Left vs right:** imbalances between your arms and legs.
-   - **How sure are we?** Every finding carries a confidence level based on tracking quality, how visible the relevant limb was and how much evidence there is. Uncertain findings are worded as "possibly" and kept out of the plan. Issues seen on most moves are reported once as a pattern instead of on every move.
-   - **Detailed breakdown per area**, extra observations (feet cutting loose, high steps, shake-outs, stance, pace), and a **comparison with your previous climbs**.
-   - **Three coaches, one per analysis level.** *Magnus* (quick look: fastest model, short plain report with one thing to work on), *Alex* (all-round: standard model and mirrored check, main report with the technical extras under "More detail") and *Eric* (deep dive: largest model, everything shown) — playful first-name nods to well-known climbing coaches/YouTubers, not the real people. Each report opens with the coach's short take in plain language. Pick a coach in Guide → Your coach or before each climb.
-   - **Outdoor / indoor.** Set where you climb (Guide → Settings, or per climb). Outdoor searches the frame down to small tiles and retries more missed frames for far-away climbers; indoor expects a closer climber, so it searches faster, and fall tips cover gym holds instead of rock conditions.
-   - **Compare two attempts.** Pick an earlier attempt before analysing and the report gets a "Vs your earlier attempt" chapter: both thumbnails side by side, result, high point, the move you came off on, technique score, what got better, what got worse, what stayed the same, and a numbered list of what to do on the next attempt. The coach's take mentions it too.
+3. **Report:** it reads top to bottom, most useful first:
+   - **Summary:** the climb, your technique score, the coach's short take, and **how it ended** (topped out, held the top, lowered off or fell, detected from the video with a confidence level). Tap to correct it.
+   - **Fix these first:** every fall, then the top habits to change (one with the quick-look coach, three otherwise). Each one gets a card with:
+     - a **big animated skeleton replay** of the moment it happened, made from the stored poses so no video is needed. The body part at fault is in red. The holds you were using are shown as grey shapes, estimated from where your hands and feet stayed still. A **green guide** shows what to do instead where the app can work it out: the straight-arm line and where your shoulder would be, where to put your hips over your feet, or the foothold you stepped to later ("foot here first").
+     - a **freeze-frame on the mistake** with a plain note ("Your left arm is bent to about 75° while it holds you…"), step buttons (Get set / Reach / Grab / ⚠ Mistake), frame-by-frame stepping, ¼×, ½× and 1× speed, and **Watch this in your video** when the video is attached;
+     - **the moves where it happened**, worst first: tap one to replay it.
+     - Under the replay: what went wrong, why it matters, **do this instead**, a drill to practise it, and a goal for next time. Fall cards add the fixes for that cause, a plan for your next attempt and anything else that played a part.
+   - **What you did well:** a short list.
+   - **Vs your earlier attempt** (if you picked one): what got better, what got worse and what to do on the next go.
+   - **Everything else**, folded away: technique scores, the height-over-time chart and key moments, move by move, start/middle/top, left vs right, other observations, the per-area breakdown, how you moved (PLOS ONE movement states), techniques spotted, the half-second movement timeline with label export, comparison with earlier climbs, how sure the analysis is, and every measurement.
+   - **Three coaches, one per analysis level.** *Magnus* (quick look: fastest model, one habit to fix), *Alex* (all-round: standard model and mirrored check) and *Eric* (deep dive: largest model, "Everything else" open by default). Their names are playful first-name nods to well-known climbing coaches/YouTubers, not the real people. Pick a coach in Guide → Your coach or before each climb.
+   - **Outdoor / indoor.** Set where you climb (Guide → Settings, or per climb). Outdoor searches the frame down to small tiles and retries more missed frames for far-away climbers. Indoor expects a closer climber, so it searches faster, and fall tips cover gym holds instead of rock conditions.
+   - **Coaching that follows up instead of repeating itself.** A problem that keeps coming back shows how its score has moved and gets a different cue and drill each time. Strengths you've kept for several climbs are summed up in one line. Falling the same way again is flagged as a pattern.
    - **Light / dark mode.** Guide → Settings → Appearance: Auto (follows the phone), Light or Dark.
-   - **Coaching that follows up instead of repeating itself.** Each climb is coached with your earlier climbs in mind: a problem that keeps coming back shows how its score has moved and gets a different cue and drill each time, explanations you've already read twice are left out, strengths you've kept for several climbs are summed up in one line, fixes since your last climb are called out, and falling the same way again is flagged as a pattern with a different lead fix and drill.
-   - Height-over-time chart, key moments, and a video replay with a skeleton overlay.
 4. **History / Progress:** every climb is saved on the device. Progress shows score trends, send rate, hardest send, and your recurring weak spots.
 5. **Guide:** set your height (for metre estimates), switch analysis quality, and export or import backups.
 
@@ -92,12 +88,14 @@ js/pose.js                   MediaPipe Pose in the browser + zoomed climber trac
 js/camera.js                 camera-movement estimation (pure, tested)
 js/outcome.js                finish/top-out/fall detection and fall cause analysis (pure, tested)
 js/falladvice.js             coaching for each fall cause
-js/fallview.js               animated skeleton replay of a fall
+js/mistakes.js               falls + habits to fix, with the moves that show each one best (pure, tested)
+js/replay.js                 big animated skeleton replay with holds, red/green guides and freeze-frame notes
 js/labels.js                 multi-label movement timeline, PLOS ONE movement states, events, repertoire (pure, tested)
 js/timeline.js               movement timeline view + label export
 js/refine.js                 pose clean-up: left/right fixes, confidence-weighted smoothing, bone lengths (pure, tested)
 vendor/mediapipe/            MediaPipe Tasks Vision 1.0.1 JS + WASM (Apache 2.0)
 models/                      pose_landmarker lite / full / heavy models (Apache 2.0)
 sw.js, manifest.webmanifest  offline support + installable app
-tests/                       node:test suite with a synthetic climber; outdoor-scene.html test fixture
+tests/                       node:test suite with a synthetic climber; outdoor-scene.html test fixture;
+                             report-preview.html renders a full report from a simulated climb (npm start, then open it)
 ```
