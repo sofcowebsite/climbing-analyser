@@ -586,3 +586,31 @@ table.data .what { display: block; color: var(--muted); font-size: 12px; }
 .replay-phases .phase-key .phase-num { width: 18px; height: 18px; }
 .phase-key { color: var(--critical-text); font-weight: 600; }
 .replay-phases { grid-template-columns: 1fr 1fr 1fr auto; }
+
+/* ---------- did your fixes work? ---------- */
+.prog-headline { font-size: 17px; font-weight: 650; margin: 10px 0 6px; }
+.prog-pill { font-weight: 600; }
+.prog-fixed, .pill.prog-fixed { --prog: var(--good); }
+.prog-better, .pill.prog-better { --prog: var(--good); }
+.prog-same, .pill.prog-same { --prog: var(--warning); }
+.prog-worse, .pill.prog-worse { --prog: var(--critical); }
+.prog-unknown, .pill.prog-unknown { --prog: var(--muted); }
+.pill.prog-pill { background: color-mix(in srgb, var(--prog) 15%, var(--surface)); color: var(--ink); border: 1px solid color-mix(in srgb, var(--prog) 45%, transparent); }
+.progress-card { border-top: 4px solid var(--prog); padding-top: 14px; }
+.progress-card h3 { margin: 2px 0 4px; font-size: 18px; line-height: 1.25; }
+.prog-icon { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--prog); color: #fff; font-weight: 700; font-size: 16px; }
+.prog-same .prog-icon { color: #1a1200; }
+.prog-numbers { font-size: 17px; margin: 12px 0 2px; }
+.prog-text { font-size: 16px; margin: 8px 0 10px; }
+.seg-attempt { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-top: 4px; }
+.seg-btn { font: inherit; font-size: 15px; font-weight: 600; min-height: 44px; border: none; background: var(--surface-2); color: var(--ink); cursor: pointer; }
+.seg-btn + .seg-btn { border-left: 1px solid var(--border); }
+.seg-btn.active { background: var(--accent); color: var(--accent-ink); }
+.progress-card .muted.small { margin: 6px 0 0; }
+.replay-callout-good { border-left-color: var(--good); }
+.phase-good { border-color: var(--good); color: var(--good-text); }
+.retry-card { border: 2px solid var(--accent); background: var(--accent-wash); }
+.retry-card h3 { margin-top: 0; }
+.retry-card .muted.small { text-align: center; margin: 8px 0 0; }
+.retry-banner { border-left: 4px solid var(--accent); background: var(--accent-wash); }
+.retry-banner p { margin: 4px 0 0; }

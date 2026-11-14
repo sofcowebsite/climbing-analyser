@@ -26,7 +26,8 @@ Any free static host also works: Netlify, Cloudflare Pages, or Vercel. Just poin
      - **the moves where it happened**, worst first: tap one to replay it.
      - Under the replay: what went wrong, why it matters, **do this instead**, a drill to practise it, and a goal for next time. Fall cards add the fixes for that cause, a plan for your next attempt and anything else that played a part.
    - **What you did well:** a short list.
-   - **Vs your earlier attempt** (if you picked one): what got better, what got worse and what to do on the next go.
+   - **Try it again:** under your fixes, **Film another attempt** opens the camera (or your Photos) straight away. The new video is set up as another attempt at the same climb: name, type, grade and terrain are filled in and it's linked to this report.
+   - **Did your fixes work?** (on a second attempt, or whenever you pick an earlier attempt to compare with): each thing the earlier report told you to fix is marked **Fixed**, **Better**, **No change yet** or **Worse**. You get the numbers (e.g. "Feet first: 33% → 63%"), how many moves had the problem each time, and what to do next. Each item has a replay you can flip between **Earlier attempt** (the mistake in red) and **This attempt**, where moves you got right are shown in green, with the misses still there next to them. Then come the result, the high point, a plan for the next go and all the differences side by side.
    - **Everything else**, folded away: technique scores, the height-over-time chart and key moments, move by move, start/middle/top, left vs right, other observations, the per-area breakdown, how you moved (PLOS ONE movement states), techniques spotted, the half-second movement timeline with label export, comparison with earlier climbs, how sure the analysis is, and every measurement.
    - **Three coaches, one per analysis level.** *Magnus* (quick look: fastest model, one habit to fix), *Alex* (all-round: standard model and mirrored check) and *Eric* (deep dive: largest model, "Everything else" open by default). Their names are playful first-name nods to well-known climbing coaches/YouTubers, not the real people. Pick a coach in Guide → Your coach or before each climb.
    - **Outdoor / indoor.** Set where you climb (Guide → Settings, or per climb). Outdoor searches the frame down to small tiles and retries more missed frames for far-away climbers. Indoor expects a closer climber, so it searches faster, and fall tips cover gym holds instead of rock conditions.
@@ -89,6 +90,7 @@ js/camera.js                 camera-movement estimation (pure, tested)
 js/outcome.js                finish/top-out/fall detection and fall cause analysis (pure, tested)
 js/falladvice.js             coaching for each fall cause
 js/mistakes.js               falls + habits to fix, with the moves that show each one best (pure, tested)
+js/followup.js               "did your fixes work?": checks the earlier attempt's fixes on a new attempt (pure, tested)
 js/replay.js                 big animated skeleton replay with holds, red/green guides and freeze-frame notes
 js/labels.js                 multi-label movement timeline, PLOS ONE movement states, events, repertoire (pure, tested)
 js/timeline.js               movement timeline view + label export

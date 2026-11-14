@@ -142,7 +142,7 @@ export function createReplay(container, track, aspect, opts) {
   const watch = opts.onWatchVideo ? el('button', { type: 'button', class: 'btn btn-block replay-watch', text: 'Watch this in your video (slow motion)', onclick: () => opts.onWatchVideo(ex.t0) }) : null;
   const legend = el('div', { class: 'replay-legend' });
   const picker = examples.length > 1 ? el('div', { class: 'replay-examples', role: 'group', 'aria-label': 'Where it happened' }) : null;
-  container.append(...[picker && el('p', { class: 'replay-examples-head', text: `Seen on ${examples.length} moves. Tap one to watch it:` }), picker, stage, scrubRow, phaseRow, controls, watch, legend].filter(Boolean));
+  container.append(...[picker && el('p', { class: 'replay-examples-head', text: examples.some((e) => e.good) ? 'Tap a move to watch it:' : `Seen on ${examples.length} moves. Tap one to watch it:` }), picker, stage, scrubRow, phaseRow, controls, watch, legend].filter(Boolean));
 
   let ex, data, k = 0, playing = !reduced, rate = 0.5, acc = 0, last = performance.now(), raf = 0, frozenUntil = 0, visible = true, size = { w: 0, h: 0 };
   const hiFor = (e) => new Set((e.highlight || []).flatMap((x) => LIMB_JOINTS[x] || []));
@@ -172,10 +172,10 @@ export function createReplay(container, track, aspect, opts) {
     phaseRow.replaceChildren(
       ...ex.phases.map((p, j) => el('button', { type: 'button', class: 'phase', 'data-j': String(j), onclick: () => jumpTo(p.t, false) },
         el('span', { class: 'phase-num', text: String(j + 1) }), el('span', { text: p.short || p.label }))),
-      el('button', { type: 'button', class: 'phase phase-key', 'aria-label': ex.annot === 'fall' ? 'Jump to the moment you let go' : 'Jump to the mistake', onclick: () => { jumpTo(ex.tKey, true); } }, el('span', { text: ex.annot === 'fall' ? '⚠ Let go' : '⚠ Mistake' })),
+      el('button', { type: 'button', class: `phase phase-key${ex.good ? ' phase-good' : ''}`, 'aria-label': ex.good ? 'Jump to the moment you got it right' : ex.annot === 'fall' ? 'Jump to the moment you let go' : 'Jump to the mistake', onclick: () => { jumpTo(ex.tKey, true); } }, el('span', { text: ex.good ? '✓ Done right' : ex.annot === 'fall' ? '⚠ Let go' : '⚠ Mistake' })),
     );
     const items = [];
-    if (hi.size || ex.annot === 'arm' || ex.annot === 'hips') items.push(el('span', {}, el('i', { class: 'lg lg-bad' }), 'The problem'));
+    if (!ex.good && (hi.size || ex.annot === 'arm' || ex.annot === 'hips')) items.push(el('span', {}, el('i', { class: 'lg lg-bad' }), 'The problem'));
     if (ex.guide) items.push(el('span', {}, el('i', { class: 'lg lg-good' }), 'Do it like this'));
     if (data.holds.length) items.push(el('span', {}, el('i', { class: 'lg lg-hold' }), 'Holds you used (estimated)'));
     legend.replaceChildren(...items);
@@ -252,6 +252,7 @@ export function createReplay(container, track, aspect, opts) {
     const atKey = Math.abs(k - data.keyK) <= 1 || (f.t >= ex.tKey - 0.1 && f.t <= ex.tKey + 0.5);
     callout.hidden = !(atKey || performance.now() < frozenUntil);
     callout.textContent = ex.callout;
+    callout.classList.toggle('replay-callout-good', !!ex.good);
     scrub.value = String(k);
   }
 

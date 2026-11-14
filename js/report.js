@@ -4,6 +4,8 @@ import { lineChart, scoreBars } from './charts.js';
 import { scoreLabel, scoreStatus, COACHES, coachForQuality } from './coach.js';
 import { createReplay } from './replay.js';
 import { buildFixes, PLAIN_TITLES } from './mistakes.js';
+import { fixProgress, STATUS } from './followup.js';
+import { displayTrack } from './player.js';
 import { renderTimeline, labelsExport, STATE_CATS } from './timeline.js';
 import { GRADE_SCALES } from './grades.js';
 
@@ -144,7 +146,50 @@ export function renderReport(container, session, opts = {}) {
     ...kids);
   let nChapter = 0;
 
-  // ================= 1. fix these first =================
+  // ================= did your fixes work? (a second attempt at the same climb) =================
+  const cmp = r.comparison;
+  const prevId = session.compareTo || cmp?.prev?.id || null;
+  const prevS = prevId ? (opts.history || []).find((x) => x.id === prevId && x.analysis && x.report) : null;
+  const progress = prevS ? fixProgress(
+    { analysis: a, report: r, outcome: session.outcomeSource === 'user' ? session.outcome : null },
+    { analysis: prevS.analysis, report: prevS.report, outcome: prevS.outcomeSource === 'user' ? prevS.outcome : null, coach: prevS.coach },
+  ) : null;
+  const shot = (src, label, sub) => h('figure', { class: 'attempt' },
+    src ? h('img', { src, alt: label }) : h('div', { class: 'attempt-blank', text: 'No picture' }),
+    h('figcaption', {}, h('strong', { text: label }), h('span', { class: 'muted small', text: sub })));
+  const arrow = (b) => (b === true ? h('span', { class: 'chg chg-up', text: '▲ better' }) : b === false ? h('span', { class: 'chg chg-down', text: '▼ worse' }) : h('span', { class: 'muted', text: '–' }));
+  const listOf = (title, items, cls) => (items?.length ? [h('h4', { text: title }), h('ul', { class: `ticks ${cls}` }, items.map((x) => h('li', { text: x.text })))] : []);
+  const numbersFold = () => (cmp ? h('details', { class: 'also' }, h('summary', { text: 'All the differences, side by side' }),
+    h('div', { class: 'table-wrap' }, h('table', { class: 'data' },
+      h('thead', {}, h('tr', {}, h('th', { text: '' }), h('th', { class: 'num', text: 'Earlier' }), h('th', { class: 'num', text: 'This time' }), h('th', { class: 'num', text: '' }))),
+      h('tbody', {}, cmp.facts.map((f) => h('tr', {},
+        h('td', { text: f.label }), h('td', { class: 'num', text: f.before }), h('td', { class: 'num', text: f.now }), h('td', { class: 'num' }, arrow(f.better))))))),
+    ...listOf('Better this time', cmp.better, 'good'),
+    ...listOf('Worse this time', cmp.worse, 'bad'),
+    ...listOf('The same on both attempts', cmp.still, 'bad'),
+    cmp.caveats.length ? h('p', { class: 'muted small', text: cmp.caveats.join(' ') }) : null) : null);
+  if (progress) {
+    const tally = Object.entries(STATUS).filter(([k]) => progress.counts[k])
+      .map(([k, st]) => h('span', { class: `pill prog-pill prog-${k}`, text: `${st.icon} ${progress.counts[k]} ${st.label.toLowerCase()}` }));
+    container.append(chapter(++nChapter, 'Did your fixes work?',
+      `Checking the ${progress.items.length === 1 ? 'thing' : `${word(progress.items.length)} things`} your earlier attempt told you to fix.`,
+      card(null,
+        prevS.thumb || session.thumb ? h('div', { class: 'attempts' },
+          shot(prevS.thumb, 'Earlier attempt', fmtDate(prevS.createdAt)),
+          shot(session.thumb, 'This attempt', fmtDate(session.createdAt))) : null,
+        cmp ? h('p', { class: 'cmp-headline', text: cmp.headline }) : null,
+        h('p', { class: 'prog-headline', text: progress.headline }),
+        tally.length ? h('div', {}, tally) : null,
+        opts.onOpen ? h('button', { type: 'button', class: 'btn btn-small', text: 'Open the earlier attempt', onclick: () => opts.onOpen(prevS.id) }) : null,
+      ),
+      progress.items.map((it) => progressCard(it, { prevS, opts, canSeek })),
+      cmp?.advice?.length ? card('On your next attempt',
+        h('ol', { class: 'next-steps' }, cmp.advice.map((x) => h('li', { text: x }))),
+        numbersFold()) : null,
+    ));
+  }
+
+  // ================= fix these first =================
   const fixes = buildFixes(a, r, { habits: simple ? 1 : 3, falls: simple ? 1 : 3 });
   const nFalls = fixes.filter((f) => f.kind === 'fall').length;
   const nHabits = fixes.length - nFalls;
@@ -152,11 +197,22 @@ export function renderReport(container, session, opts = {}) {
     : [nFalls ? (nFalls === 1 ? 'Why you came off' : `Why you came off, all ${word(nFalls)} times`) : null,
       nHabits ? (nHabits === 1 ? `${nFalls ? 'then ' : ''}the one habit that would help you most` : `${nFalls ? 'then ' : ''}the ${word(nHabits)} habits that would help you most, in order`) : null]
       .filter(Boolean).join(', ').replace(/^./, (c) => c.toUpperCase()) + '. Each one replays the moment it happened.';
-  container.append(chapter(++nChapter, fixes.length === 1 ? 'Your one thing to fix' : 'Fix these first', intro,
+  const fixTitle = progress ? (fixes.length === 1 ? 'Your one thing to fix next' : 'What to fix next') : fixes.length === 1 ? 'Your one thing to fix' : 'Fix these first';
+  container.append(chapter(++nChapter, fixTitle, intro,
     fixes.length ? fixes.map((f, i) => fixCard(f, i + 1, { simple, opts, canSeek }))
-      : h('div', { class: 'card' }, h('p', { text: 'Nothing stood out as a clear problem on this climb. Nice work! Keep climbing like this, or try something a little harder.' }))));
+      : h('div', { class: 'card' }, h('p', { text: 'Nothing stood out as a clear problem on this climb. Nice work! Keep climbing like this, or try something a little harder.' })),
+    // Try again: film another attempt at this climb, linked to this one.
+    opts.onRetry ? h('div', { class: 'card retry-card' },
+      h('h3', { text: 'Ready to try again?' }),
+      h('p', { text: fixes.length
+        ? `Work on ${fixes.length === 1 ? 'the fix' : 'the fixes'} above, then film another go at this climb. The new report will show what got better, side by side with this one.`
+        : 'Film another go at this climb and the new report will compare the two attempts side by side.' }),
+      h('button', { type: 'button', class: 'btn btn-primary btn-block', text: 'Film another attempt', onclick: () => opts.onRetry(session) }),
+      h('p', { class: 'muted small', text: 'You can record it now, or pick it from your Photos later.' }),
+    ) : null,
+  ));
 
-  // ================= 2. what you did well =================
+  // ================= what you did well =================
   const strengths = (r.strengths || []).slice(0, simple ? 2 : 3);
   if (strengths.length) {
     container.append(chapter(++nChapter, 'What you did well', null, h('div', { class: 'card' },
@@ -168,34 +224,18 @@ export function renderReport(container, session, opts = {}) {
       ))))));
   }
 
-  // ================= this attempt vs an earlier attempt =================
-  const cmp = r.comparison;
-  if (cmp) {
-    const prevS = (opts.history || []).find((x) => x.id === cmp.prev.id);
-    const shot = (src, label, sub) => h('figure', { class: 'attempt' },
-      src ? h('img', { src, alt: label }) : h('div', { class: 'attempt-blank', text: 'No picture' }),
-      h('figcaption', {}, h('strong', { text: label }), h('span', { class: 'muted small', text: sub })));
-    const arrow = (b) => (b === true ? h('span', { class: 'chg chg-up', text: '▲ better' }) : b === false ? h('span', { class: 'chg chg-down', text: '▼ worse' }) : h('span', { class: 'muted', text: '–' }));
-    const listOf = (title, items, cls) => (items.length ? [h('h4', { text: title }), h('ul', { class: `ticks ${cls}` }, items.map((x) => h('li', { text: x.text })))] : []);
+  // ================= vs an earlier attempt (when that climb is no longer saved) =================
+  if (cmp && !progress) {
     container.append(chapter(++nChapter, 'Vs your earlier attempt',
       { better: 'This attempt went better. Here\'s what changed.', worse: 'This one didn\'t go as well. Here\'s what changed, and how to get it back.', mixed: 'Some things got better and some slipped.', same: 'The two attempts were very similar.' }[cmp.verdict] || '',
       card(null,
         h('div', { class: 'attempts' },
-          shot(prevS?.thumb, 'Earlier attempt', cmp.prev.createdAt ? fmtDate(cmp.prev.createdAt) : ''),
+          shot(null, 'Earlier attempt', cmp.prev.createdAt ? fmtDate(cmp.prev.createdAt) : ''),
           shot(session.thumb, 'This attempt', fmtDate(session.createdAt))),
         h('p', { class: 'cmp-headline', text: cmp.headline }),
-        ...listOf('Better this time', cmp.better, 'good'),
-        ...listOf('Worse this time', cmp.worse, 'bad'),
-        ...listOf('The same on both attempts', cmp.still, 'bad'),
         h('h4', { text: 'On your next attempt' }),
         h('ol', { class: 'next-steps' }, cmp.advice.map((x) => h('li', { text: x }))),
-        h('details', { class: 'also' }, h('summary', { text: 'Side-by-side numbers' }),
-          h('div', { class: 'table-wrap' }, h('table', { class: 'data' },
-            h('thead', {}, h('tr', {}, h('th', { text: '' }), h('th', { class: 'num', text: 'Earlier' }), h('th', { class: 'num', text: 'This time' }), h('th', { class: 'num', text: '' }))),
-            h('tbody', {}, cmp.facts.map((f) => h('tr', {},
-              h('td', { text: f.label }), h('td', { class: 'num', text: f.before }), h('td', { class: 'num', text: f.now }), h('td', { class: 'num' }, arrow(f.better))))))),
-          cmp.caveats.length ? h('p', { class: 'muted small', text: cmp.caveats.join(' ') }) : null),
-        prevS && opts.onOpen ? h('button', { type: 'button', class: 'btn btn-small', text: 'Open the earlier attempt', onclick: () => opts.onOpen(prevS.id) }) : null,
+        numbersFold(),
       )));
   }
 
@@ -489,6 +529,48 @@ function outcomeBlock(session, oc, opts) {
       h('ul', { class: 'evidence' }, oc.evidence.map((e) => h('li', { text: e }))),
       oc.alternatives?.length ? h('p', { class: 'muted small', text: oc.alternatives.join(' ') }) : null) : null,
   );
+}
+
+// One "did this fix work?" card: the verdict, the numbers, and a replay you can flip between
+// the earlier attempt and this one.
+function progressCard(it, { prevS, opts, canSeek }) {
+  const st = STATUS[it.status] || STATUS.unknown;
+  const box = h('div', { class: 'replay-box' });
+  const note = h('p', { class: 'muted small' });
+  let prevTrack = null;
+  const sides = {
+    before: { label: 'Earlier attempt', examples: it.before, track: () => (prevTrack ||= displayTrack(prevS.track)), aspect: prevS.track?.aspect, seek: null },
+    after: { label: 'This attempt', examples: it.after, track: () => opts.track, aspect: opts.aspect, seek: canSeek ? (t) => opts.onSeek(t, 0.5) : null },
+  };
+  const btns = {};
+  const show = (key) => {
+    const sd = sides[key];
+    for (const [k, b] of Object.entries(btns)) { b.classList.toggle('active', k === key); b.setAttribute('aria-pressed', String(k === key)); }
+    box.replaceChildren();
+    const track = sd.examples.length ? sd.track() : null;
+    if (!sd.examples.length || !track) {
+      note.textContent = key === 'after'
+        ? (it.kind === 'fall' ? 'No fall to show this time.' : 'Nothing to replay for this one on the new video.')
+        : 'No replay saved for the earlier attempt.';
+      return;
+    }
+    note.textContent = key === 'before' ? 'The earlier attempt: red shows what went wrong.' : (sd.examples[0].good ? 'This attempt: here you got it right.' : 'This attempt: red shows where it still happened.');
+    createReplay(box, track, sd.aspect || 0.5625, { examples: sd.examples, onWatchVideo: sd.seek });
+  };
+  const seg = h('div', { class: 'seg seg-attempt', role: 'group', 'aria-label': 'Which attempt to replay' },
+    ...Object.entries(sides).map(([k, sd]) => (btns[k] = h('button', { type: 'button', class: 'seg-btn', text: sd.label, onclick: () => show(k) }))));
+  const el = h('article', { class: `card progress-card prog-${it.status}` },
+    h('div', { class: 'fix-head' },
+      h('span', { class: 'prog-icon', 'aria-hidden': 'true', text: st.icon }),
+      h('div', {}, h('h3', { text: it.title }), h('span', { class: `pill prog-pill prog-${it.status}`, text: st.label })),
+    ),
+    it.numbers ? h('p', { class: 'prog-numbers' }, `${it.numbers.label}: `, h('span', { class: 'muted', text: it.numbers.before }), ' → ', h('strong', { text: it.numbers.now })) : null,
+    it.moves ? h('p', { class: 'small muted', text: it.moves }) : null,
+    h('p', { class: 'prog-text', text: it.text }),
+    (it.before.length || it.after.length) ? [seg, note, box] : null,
+  );
+  if (it.before.length || it.after.length) requestAnimationFrame(() => show(it.after.length ? 'after' : 'before'));
+  return el;
 }
 
 // One "fix" card: the title, the big replay, then what went wrong and what to do instead.

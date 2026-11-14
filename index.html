@@ -31,6 +31,14 @@
     <!-- ANALYSE -->
     <section id="view-analyse" class="view" data-title="Analyse">
       <div id="pick-step">
+        <div class="card retry-banner" id="retry-pick" hidden>
+          <h3>Another attempt at <span class="retry-name"></span></h3>
+          <p class="muted small">Record a new video or pick one from your Photos. The report will check whether your fixes worked.</p>
+          <div class="btn-row" style="margin-top:10px">
+            <button class="btn btn-primary" id="retry-choose" type="button">Film or choose the video</button>
+            <button class="btn btn-link small" id="retry-cancel" type="button">Cancel</button>
+          </div>
+        </div>
         <div class="card hero-card">
           <h2>Analyse a climb</h2>
           <p class="muted">Pick a video from your Photos. It's analysed on your phone. Nothing is uploaded anywhere.</p>
@@ -53,6 +61,10 @@
       <div id="video-area" hidden></div>
 
       <div id="setup-step" hidden>
+        <div class="card retry-banner" id="retry-banner" hidden>
+          <h3>Another attempt at <span class="retry-name"></span></h3>
+          <p class="small">The climb details are filled in and it's linked to your earlier attempt, so the report will show whether your fixes worked. Just tap <strong>Analyse climb</strong>.</p>
+        </div>
         <details class="card optional-box" id="fine-tune">
           <summary>Optional: point out the climber or trim the video</summary>
           <p class="muted small">You can skip this. The app finds the climber by itself (the person highest on the wall) and analyses the whole video.</p>

@@ -45,6 +45,7 @@ let pick = null; // where the user tapped the climber: { x, y, t } (0..1 coords)
 let abort = null;
 const PICK_HELP = 'Only needed if other people (like the belayer) are in the video. Tap the button, then tap the climber in the picture.';
 let compareTo = null; // id of an earlier attempt to compare this climb with (optional)
+let retryOf = null; // the saved climb this video is another attempt at ("Film another attempt")
 
 function step(name) {
   for (const s of ['pick', 'setup', 'progress', 'result']) $(`${s}-step`).hidden = s !== name;
@@ -98,6 +99,25 @@ function startPreload() {
     .finally(() => import('./pose.js').then((pose) => pose.stopPreloadProgress(onP)));
 }
 
+// "Film another attempt" on a report: open the camera / Photos picker straight away, and
+// remember which climb it's for so the details can be filled in and the attempts linked.
+function startRetry(s) {
+  retryOf = s;
+  showView('analyse');
+  if (!player) step('pick');
+  syncRetry();
+  $('file-input').click(); // must happen inside the tap, or iOS won't open the picker
+}
+function syncRetry() {
+  for (const el of document.querySelectorAll('.retry-name')) el.textContent = retryOf?.name ? `"${retryOf.name}"` : 'this climb';
+  $('retry-pick').hidden = !retryOf;
+  $('retry-banner').hidden = !retryOf || compareTo !== retryOf.id;
+}
+$('retry-choose').addEventListener('click', () => $('file-input').click());
+$('retry-cancel').addEventListener('click', () => { retryOf = null; syncRetry(); });
+// Choosing a video the normal way isn't another attempt.
+document.addEventListener('click', (e) => { if (e.target.closest?.('label[for="file-input"]')) { retryOf = null; syncRetry(); } }, true);
+
 async function openVideo(file) {
   currentFile = file;
   startPreload();
@@ -122,6 +142,16 @@ async function openVideo(file) {
   const base = file.name ? file.name.replace(/\.[^.]+$/, '') : '';
   form.elements.name.value = /^(IMG|VID|MOV|RPReplay|trim)[_-]?\d/i.test(base) || !base ? '' : base;
   compareTo = null;
+  if (retryOf) {
+    // Another attempt: same climb details, linked to the earlier attempt.
+    form.elements.name.value = retryOf.name || '';
+    if (retryOf.type) form.elements.type.value = retryOf.type;
+    if (retryOf.gradeScale && GRADE_SCALES[retryOf.gradeScale]) { $('grade-scale').value = retryOf.gradeScale; updateGradeOptions(); }
+    if (retryOf.grade) form.elements.grade.value = retryOf.grade;
+    if (retryOf.terrain) form.elements.terrain.value = retryOf.terrain;
+    compareTo = retryOf.id;
+  }
+  syncRetry();
   renderComparePicker(await upgradeAll(await store.listSessions()));
 }
 
@@ -338,6 +368,8 @@ async function runAnalysis() {
     };
     await store.saveSession(session);
     store.requestPersistence();
+    retryOf = null;
+    syncRetry();
     showResult(session);
   } catch (err) {
     player.setLive(null);
@@ -367,6 +399,7 @@ async function showResult(session) {
       onSeek: (t, rate) => player.seek(t, rate),
       onSetOutcome: async (val) => { await setOutcome(session, val); draw(); toast('Saved.'); },
       onOpen: (id) => openSession(id, true),
+      onRetry: startRetry,
       footer: h('div', { class: 'actions' },
         h('label', { class: 'btn btn-primary btn-block', for: 'file-input', text: 'Analyse another video' }),
       ),
@@ -483,6 +516,7 @@ async function openSession(id, fromProgress = false) {
       onSeek: canSeek ? (t, rate) => detailPlayer.seek(t, rate) : null,
       onSetOutcome: async (val) => { await setOutcome(s, val); render(); toast('Saved.'); },
       onOpen: (id) => openSession(id),
+      onRetry: startRetry,
       extra,
     });
   };

@@ -30,15 +30,19 @@
     const hipShift = Number(q.get('hips') || 0);
     if (hipShift) for (const f of frames) for (const i of [0, 11, 12, 13, 14, 23, 24, 25, 26]) if (f.p) f.p[i] = [f.p[i][0] + hipShift, f.p[i][1], f.p[i][2]];
     if (ending !== 'none') frames = withEnding(frames, ending);
-    const session = (id, fr, createdAt, history = []) => {
+    const session = (id, fr, createdAt, history = [], compareWith = null) => {
       const analysis = analyze(fr, { terrain: 'vertical', venue: 'indoor', aspect });
-      const report = coach(analysis, { history, coach: q.get('coach') || 'rowan', venue: 'indoor' });
-      return { id, createdAt, name: 'Blue overhang', type: 'boulder', grade: 'V3', outcome: report.outcome?.result === 'fell' ? 'fell' : 'sent', outcomeSource: 'auto', venue: 'indoor', coach: report.coach, analysis, report, track: packTrack(fr, aspect) };
+      const report = coach(analysis, { history, coach: q.get('coach') || 'rowan', venue: 'indoor', compareWith });
+      return { id, createdAt, name: 'Blue overhang', type: 'boulder', grade: 'V3', outcome: report.outcome?.result === 'fell' ? 'fell' : 'sent', outcomeSource: 'auto', venue: 'indoor', coach: report.coach, analysis, report, track: packTrack(fr, aspect), compareTo: compareWith?.id || null };
     };
-    const history = q.get('history') === '1' ? [session('old', withEnding(makeClimb({ ...style, seed: 7 }), 'footSlip'), Date.now() - 864e5)] : [];
-    const s = session('now', frames, Date.now(), history);
+    // again=1: this climb is a second attempt after a messy first one (feet last, bent arms, a
+    // foot slip), to see "Did your fixes work?".
+    const again = q.get('again') === '1';
+    const history = again ? [session('old', withEnding(makeClimb({ cycles: style.cycles, noise: 0.004, seed: style.seed, feetFirst: false, bentArms: true }), 'footSlip'), Date.now() - 864e5)]
+      : q.get('history') === '1' ? [session('old', withEnding(makeClimb({ ...style, seed: 7 }), 'footSlip'), Date.now() - 864e5)] : [];
+    const s = session('now', frames, Date.now(), history, again ? history[0] : null);
     window.__session = s;
-    renderReport(document.getElementById('out'), s, { history, track: displayTrack(s.track), aspect, onSetOutcome: () => {} });
+    renderReport(document.getElementById('out'), s, { history, track: displayTrack(s.track), aspect, onSetOutcome: () => {}, onRetry: () => alert('retry') });
   </script>
 </body>
 </html>
